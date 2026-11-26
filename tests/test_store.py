@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +43,29 @@ class StoreTests(unittest.TestCase):
 
         reloaded = Store(self.path)
         self.assertEqual(len(reloaded.settings_for(123)["specs"]), 12)
+
+    def test_old_saved_limits_are_migrated_to_new_defaults(self) -> None:
+        old_data = {
+            "version": 1,
+            "guilds": {
+                "123": {
+                    "title": "Старый рейд",
+                    "limits": {"tank": 2, "heal": 3, "dd": 8},
+                    "timezone": "Europe/Moscow",
+                }
+            },
+            "raids": {},
+        }
+        self.path.write_text(
+            json.dumps(old_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        reloaded = Store(self.path)
+        settings = reloaded.settings_for(123)
+        self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
+        self.assertEqual(settings["settings_version"], 2)
+        self.assertEqual(settings["title"], "Старый рейд")
 
     def test_raid_and_registration_round_trip(self) -> None:
         raid = self.store.create_raid(

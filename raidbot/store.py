@@ -21,10 +21,12 @@ from .constants import (
 )
 
 _STORE_VERSION = 1
+_SETTINGS_VERSION = 2
 
 
 def default_settings() -> dict[str, Any]:
     return {
+        "settings_version": _SETTINGS_VERSION,
         "title": DEFAULT_TITLE,
         "limits": dict(DEFAULT_LIMITS),
         "role_emojis": dict(DEFAULT_ROLE_EMOJIS),
@@ -98,8 +100,14 @@ class Store:
         if isinstance(title, str) and title.strip():
             settings["title"] = title.strip()[:MAX_TITLE_LENGTH]
 
+        try:
+            settings_version = int(raw.get("settings_version", 1))
+        except (TypeError, ValueError):
+            settings_version = 1
+
+        # Version 2 switches old persisted limits (2/3/8) to 1/2/7 once.
         limits = raw.get("limits")
-        if isinstance(limits, dict):
+        if settings_version >= 2 and isinstance(limits, dict):
             for role in ROLE_ORDER:
                 try:
                     value = int(limits.get(role, DEFAULT_LIMITS[role]))
@@ -111,7 +119,6 @@ class Store:
         if isinstance(timezone, str) and timezone.strip():
             settings["timezone"] = timezone.strip()
 
-        # Role icons and specializations are static and come from code/config.
         return settings
 
     def settings_for(self, guild_id: str | int) -> dict[str, Any]:
