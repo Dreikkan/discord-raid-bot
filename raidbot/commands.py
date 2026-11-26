@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .assets import sync_role_icons
 from .constants import (
     MAX_DESCRIPTION_LENGTH,
     MAX_SPEC_NAME_LENGTH,
@@ -134,6 +135,17 @@ class RaidCog(commands.Cog):
             )
             return
 
+        icon_warning = ""
+        icon_sync = await sync_role_icons(interaction.guild, self.bot.store)
+        if icon_sync.updated:
+            settings = self.bot.store.settings_for(interaction.guild.id)
+        if icon_sync.error:
+            icon_warning = (
+                "\n⚠️ Иконки ролей не удалось применить полностью: "
+                f"{icon_sync.error}. Выдайте боту право «Управлять выражениями» "
+                "и выполните `/эмбед загрузить-иконки`."
+            )
+
         raid = self.bot.store.create_raid(
             guild_id=interaction.guild.id,
             channel_id=interaction.channel.id,
@@ -172,7 +184,7 @@ class RaidCog(commands.Cog):
             f"Начало: <t:{start_at}:F>.\n"
             f"Дата и время указаны в часовом поясе **{settings['timezone']}**, "
             "участники увидят их в своём локальном времени."
-            f"{warning}",
+            f"{warning}{icon_warning}",
             ephemeral=True,
         )
 
@@ -273,12 +285,51 @@ class RaidCog(commands.Cog):
             return
 
         for role, emoji in validated.items():
-            self.bot.store.set_role_emoji(interaction.guild_id, role, emoji)
             saved.append(f"{ROLE_LABELS[role]}: {emoji}")
+        self.bot.store.set_role_emojis(
+            interaction.guild_id, validated, source="manual"
+        )
 
         await interaction.response.send_message(
             "✅ Иконки сохранены:\n" + "\n".join(saved) + "\n"
-            "Они будут использоваться в новых эмбедах.",
+            "Они будут использоваться в новых эмбедах.\n"
+            "Автозагрузка из `assets` отключена; вернуть её можно командой "
+            "`/эмбед загрузить-иконки`.",
+            ephemeral=True,
+        )
+
+    @embed.command(
+        name="загрузить-иконки",
+        description="Загрузить иконки ролей из assets и применить их",
+    )
+    @admin_only
+    async def upload_role_icons(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        if interaction.guild is None:
+            await interaction.followup.send(
+                "Команду нужно использовать на сервере.", ephemeral=True
+            )
+            return
+
+        result = await sync_role_icons(
+            interaction.guild, self.bot.store, force=True
+        )
+        if result.error:
+            await interaction.followup.send(
+                "⚠️ Иконки применены не полностью.\n"
+                f"Ошибка: {result.error}.\n"
+                "Проверьте право бота «Управлять выражениями» и свободные слоты emoji.",
+                ephemeral=True,
+            )
+            return
+
+        if result.uploaded:
+            text = f"✅ Загружено новых emoji: **{result.uploaded}**."
+        else:
+            text = "✅ Иконки ролей уже были загружены и применены."
+        await interaction.followup.send(
+            f"{text}\nОни будут использоваться в новых эмбедах.",
             ephemeral=True,
         )
 

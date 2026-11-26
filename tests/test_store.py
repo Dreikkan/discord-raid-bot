@@ -21,6 +21,7 @@ class StoreTests(unittest.TestCase):
         settings = self.store.settings_for(123)
         self.assertEqual(settings["title"], "Еженедельный рейд")
         self.assertEqual(settings["limits"], {"tank": 2, "heal": 3, "dd": 8})
+        self.assertEqual(settings["role_icons_source"], "assets")
         self.assertEqual(settings["specs"], [])
 
         self.store.set_title(123, "Новый рейд")

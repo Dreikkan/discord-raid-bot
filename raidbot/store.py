@@ -32,6 +32,7 @@ def default_settings() -> dict[str, Any]:
         "title": DEFAULT_TITLE,
         "limits": dict(DEFAULT_LIMITS),
         "role_emojis": dict(DEFAULT_ROLE_EMOJIS),
+        "role_icons_source": "assets",
         "timezone": DEFAULT_TIMEZONE,
         "specs": [],
     }
@@ -127,6 +128,10 @@ class Store:
         if isinstance(timezone, str) and timezone.strip():
             settings["timezone"] = timezone.strip()
 
+        role_icons_source = raw.get("role_icons_source")
+        if role_icons_source in {"assets", "manual"}:
+            settings["role_icons_source"] = role_icons_source
+
         specs: list[dict[str, str]] = []
         seen_spec_ids: set[str] = set()
         seen_names: set[tuple[str, str]] = set()
@@ -186,6 +191,21 @@ class Store:
     def set_role_emoji(self, guild_id: str | int, role: str, emoji: str) -> None:
         settings = self.settings_for(guild_id)
         settings["role_emojis"][role] = emoji
+        self._save()
+
+    def set_role_emojis(
+        self,
+        guild_id: str | int,
+        emojis: dict[str, str],
+        *,
+        source: str | None = None,
+    ) -> None:
+        settings = self.settings_for(guild_id)
+        for role, emoji in emojis.items():
+            if role in ROLE_ORDER:
+                settings["role_emojis"][role] = emoji
+        if source in {"assets", "manual"}:
+            settings["role_icons_source"] = source
         self._save()
 
     def set_timezone(self, guild_id: str | int, timezone: str) -> None:
