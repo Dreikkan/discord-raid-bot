@@ -73,6 +73,7 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_public_button_opens_ephemeral_role_page(self) -> None:
         view = RaidPanelView(self.bot, self.raid["id"])
+        self.assertEqual(view.children[0].label, "Участвовать")
         interaction = FakeInteraction()
         await view._start_registration(interaction)
 

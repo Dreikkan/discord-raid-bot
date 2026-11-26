@@ -75,7 +75,7 @@ class RaidPanelView(discord.ui.View):
         self.raid_id = raid_id
 
         button = discord.ui.Button(
-            label="Зарегистрироваться",
+            label="Участвовать",
             emoji="✍️",
             style=discord.ButtonStyle.primary,
             custom_id=f"{PUBLIC_BUTTON_PREFIX}{raid_id}",
@@ -154,7 +154,7 @@ class WizardView(discord.ui.View):
         self.stop()
         embed = discord.Embed(
             title="Регистрация отменена",
-            description="Вы можете начать заново кнопкой «Зарегистрироваться».",
+            description="Вы можете начать заново кнопкой «Участвовать».",
             color=discord.Color.dark_grey(),
         )
         await interaction.response.edit_message(embed=embed, view=None)
@@ -646,7 +646,7 @@ def build_done_embed(
         inline=False,
     )
     embed.set_footer(
-        text="Изменить запись — кнопкой «Изменить запись» или повторным «Зарегистрироваться»."
+        text="Изменить запись — кнопкой «Изменить запись» или повторным нажатием «Участвовать»."
     )
     return embed
 

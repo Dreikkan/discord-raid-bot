@@ -175,7 +175,7 @@ def build_raid_embed(raid: dict[str, Any]) -> discord.Embed:
     )
 
     embed.set_footer(
-        text="Время отображается в вашем часовом поясе • Запись — кнопкой «Зарегистрироваться»"
+        text="Время отображается в вашем часовом поясе • Запись — кнопкой «Участвовать»"
     )
 
     _fit_total_length(embed)
