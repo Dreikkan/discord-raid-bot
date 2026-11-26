@@ -1,77 +1,77 @@
 {
-  "version": 1,
+  "version": 2,
   "specs": [
     {
       "id": "power",
       "role": "tank",
       "name": "Сила — Клинок громового крика, Копьё грозового разлома",
-      "icon_file": "power.png"
+      "emoji": "<:power:1575602126569349180>"
     },
     {
       "id": "rain",
       "role": "heal",
       "name": "Потоп — Веер панацеи, Зонт теней души",
-      "icon_file": "rain.png"
+      "emoji": "<:rain:1575602128217710736>"
     },
     {
       "id": "dryness",
       "role": "dd",
       "name": "Сушь — Рукавицы небесного удара, Ривен твинблейдс",
-      "icon_file": "dryness.png"
+      "emoji": "<:dryness:1575602116746289222>"
     },
     {
       "id": "dust",
       "role": "dd",
       "name": "Пыль — Несвязный веревочный дротик, Вечновесенний зонт",
-      "icon_file": "dust.png"
+      "emoji": "<:dust:1575602118696374483>"
     },
     {
       "id": "nameless",
       "role": "dd",
       "name": "Неймлесс — Безымянный меч, Безымянное копьё",
-      "icon_file": "nameless.png"
+      "emoji": "<:nameless:1575602122442023142>"
     },
     {
       "id": "nefrit",
       "role": "dd",
       "name": "Нефрит — Весенний зонт, Веер чернильницы",
-      "icon_file": "nefrit.png"
+      "emoji": "<:nefrit:1575602124480454858>"
     },
     {
       "id": "sky-snake",
       "role": "dd",
       "name": "Воздушный змей — Перчатки небесной воли, Веревочный дротик небесной хватки",
-      "icon_file": "sky-snake.png"
+      "emoji": "<:skysneak:1575602130352472125>"
     },
     {
       "id": "strateg",
       "role": "dd",
       "name": "Умбра — Стратегический меч, Копьё небесного грома",
-      "icon_file": "strateg.png"
+      "emoji": "<:strateg:1575602132336386260>"
     },
     {
       "id": "strenght",
       "role": "dd",
       "name": "Сила — Клинок губителя фаланги, Клинок рассекающий снег",
-      "icon_file": "strenght.png"
+      "emoji": "<:strenght:1575602135041581096>"
     },
     {
       "id": "wind",
       "role": "dd",
       "name": "Ветер — Адские парные клинки, Смертельный канатный дротик",
-      "icon_file": "wind.png"
+      "emoji": "<:wind:1575602139152261341>"
     },
     {
       "id": "wing",
       "role": "dd",
       "name": "Крылья — Поясной барабан муз, Поклонник ивового изгиба",
-      "icon_file": "wing.png"
+      "emoji": "<:wings:1575602141454663740>"
     },
     {
       "id": "bolt",
       "role": "dd",
       "name": "Болт — Копьё пиквейна, Копьё испытательного края",
-      "icon_file": "bolt.png"
+      "emoji": "<:bolt:1575608158519296131>"
     }
   ]
 }

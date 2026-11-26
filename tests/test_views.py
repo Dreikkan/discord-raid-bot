@@ -51,9 +51,6 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         self.guild_id = 1
 
         settings = self.store.settings_for(self.guild_id)
-        self.store.add_spec(self.guild_id, "tank", "Страж", "🐻")
-        self.store.add_spec(self.guild_id, "heal", "Жрец", "✨")
-        self.store.add_spec(self.guild_id, "dd", "Маг", "🔮")
         self.raid = self.store.create_raid(
             guild_id=self.guild_id,
             channel_id=2,

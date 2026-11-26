@@ -231,8 +231,8 @@ class RoleSelectView(WizardView):
         specs = self.bot.store.specs_for_role(raid["guild_id"], role)
         if not specs:
             warning = (
-                f"Для роли «{ROLE_LABELS[role]}» пока нет специализаций. "
-                "Администратору нужно добавить их командой /специализация добавить."
+                f"Для роли «{ROLE_LABELS[role]}» нет специализаций. "
+                "Проверьте config/specializations.json и перезапустите бота."
             )
             new_view = RoleSelectView(
                 self.bot, self.raid_id, self.user_id, warning=warning

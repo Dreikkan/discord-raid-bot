@@ -21,13 +21,8 @@ class StoreTests(unittest.TestCase):
         settings = self.store.settings_for(123)
         self.assertEqual(settings["title"], "Еженедельный рейд")
         self.assertEqual(settings["limits"], {"tank": 2, "heal": 3, "dd": 8})
-        self.assertEqual(settings["role_icons_source"], "assets")
         self.assertEqual(len(settings["specs"]), 12)
-        self.assertEqual(
-            {role: sum(1 for spec in settings["specs"] if spec["role"] == role) for role in ("tank", "heal", "dd")},
-            {"tank": 1, "heal": 1, "dd": 10},
-        )
-        self.assertTrue(all(spec.get("icon_file") for spec in settings["specs"]))
+        self.assertTrue(all(spec["emoji"].startswith("<:") for spec in settings["specs"]))
 
         self.store.set_title(123, "Новый рейд")
         self.store.set_limits(123, {"tank": 1, "heal": 2, "dd": 3})
@@ -40,40 +35,13 @@ class StoreTests(unittest.TestCase):
         )
         self.assertEqual(reloaded.settings_for(123)["timezone"], "UTC+03:00")
 
-    def test_add_remove_and_import_specs(self) -> None:
-        self.store.import_specs(123, [], replace=True)
-        spec, created = self.store.add_spec(123, "heal", "Жрец", "✨")
-        self.assertTrue(created)
-        self.assertEqual(spec["role"], "heal")
-
-        updated, created = self.store.add_spec(123, "heal", "жрец", "💚")
-        self.assertFalse(created)
-        self.assertEqual(updated["emoji"], "💚")
-        self.assertEqual(len(self.store.settings_for(123)["specs"]), 1)
-
-        counts = self.store.import_specs(
-            123,
-            [
-                {"role": "tank", "name": "Страж", "emoji": "🐻"},
-                {"role": "dd", "name": "Маг", "emoji": "🔮"},
-            ],
-        )
-        self.assertEqual(counts, {"tank": 1, "heal": 1, "dd": 1})
-
-        removed = self.store.remove_spec(123, spec["id"])
-        self.assertIsNotNone(removed)
-        self.assertEqual(len(self.store.settings_for(123)["specs"]), 2)
-
-    def test_import_can_replace(self) -> None:
-        self.store.add_spec(123, "heal", "Жрец", "✨")
-        self.store.import_specs(
-            123,
-            [{"role": "dd", "name": "Маг", "emoji": "🔮"}],
-            replace=True,
-        )
+    def test_specializations_are_static_even_if_stored_data_differs(self) -> None:
         settings = self.store.settings_for(123)
-        self.assertEqual(len(settings["specs"]), 1)
-        self.assertEqual(settings["specs"][0]["name"], "Маг")
+        settings["specs"] = []
+        self.store.save()
+
+        reloaded = Store(self.path)
+        self.assertEqual(len(reloaded.settings_for(123)["specs"]), 12)
 
     def test_raid_and_registration_round_trip(self) -> None:
         raid = self.store.create_raid(

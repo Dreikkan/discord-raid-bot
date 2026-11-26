@@ -32,7 +32,11 @@ STATUS_LABELS: dict[str, str] = {
 
 DEFAULT_TITLE = "Еженедельный рейд"
 DEFAULT_LIMITS: dict[str, int] = {"tank": 2, "heal": 3, "dd": 8}
-DEFAULT_ROLE_EMOJIS: dict[str, str] = {"tank": "🛡️", "heal": "💚", "dd": "⚔️"}
+DEFAULT_ROLE_EMOJIS: dict[str, str] = {
+    "tank": "<:tank:1575602137033875720>",
+    "heal": "<:heal:1575602120672022588>",
+    "dd": "<:DD:1575602114674032793>",
+}
 DEFAULT_TIMEZONE = "Europe/Moscow"
 
 EMBED_COLOR = 0x992D22
