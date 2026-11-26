@@ -32,6 +32,11 @@ from .specs import to_partial_emoji
 log = logging.getLogger(__name__)
 
 
+_RESET_WARNING = (
+    "Старая запись удалена. Выберите роль, специализации и статус заново."
+)
+
+
 def _is_open(raid: dict[str, Any]) -> bool:
     return int(raid.get("start_at", 0)) > int(time.time())
 
@@ -101,11 +106,23 @@ class RaidPanelView(discord.ui.View):
             )
             return
 
-        view = RoleSelectView(self.bot, self.raid_id, interaction.user.id)
+        removed_existing = self.bot.store.remove_registration(
+            self.raid_id, interaction.user.id
+        )
+        warning = _RESET_WARNING if removed_existing else None
+        if removed_existing:
+            raid = self.bot.store.get_raid(self.raid_id) or raid
+
+        view = RoleSelectView(
+            self.bot, self.raid_id, interaction.user.id, warning=warning
+        )
         await interaction.response.send_message(
             embed=view.build_embed(raid), view=view, ephemeral=True
         )
         view.message = await interaction.original_response()
+
+        if removed_existing:
+            await refresh_raid_panel(self.bot, self.raid_id)
 
 
 class WizardView(discord.ui.View):
@@ -561,8 +578,20 @@ class RegistrationDoneView(WizardView):
             )
             return
 
-        new_view = RoleSelectView(self.bot, self.raid_id, self.user_id)
+        removed_existing = self.bot.store.remove_registration(
+            self.raid_id, self.user_id
+        )
+        warning = _RESET_WARNING if removed_existing else None
+        if removed_existing:
+            raid = self.bot.store.get_raid(self.raid_id) or raid
+
+        new_view = RoleSelectView(
+            self.bot, self.raid_id, self.user_id, warning=warning
+        )
         await self._move_to(interaction, new_view, raid)
+
+        if removed_existing:
+            await refresh_raid_panel(self.bot, self.raid_id)
 
 
 def build_done_embed(

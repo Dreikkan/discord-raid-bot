@@ -162,15 +162,22 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
 
         panel = RaidPanelView(self.bot, self.raid["id"])
         first_interaction = FakeInteraction()
-        await panel._start_registration(first_interaction)
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)) as refresh_mock:
+            await panel._start_registration(first_interaction)
+        refresh_mock.assert_awaited_once()
+
+        self.assertIsNone(
+            self.store.get_raid(self.raid["id"])["registrations"].get("777")
+        )
         role_view = first_interaction.response.send_message.await_args.kwargs["view"]
         self.assertIsInstance(role_view, RoleSelectView)
 
         raid = self.store.get_raid(self.raid["id"])
         assert raid is not None
         role_text = role_view.build_embed(raid).description or ""
-        self.assertIn("Текущая запись:", role_text)
-        self.assertIn("текущая запись заменится", role_text)
+        self.assertNotIn("Текущая запись:", role_text)
+        self.assertIn("Старая запись удалена", role_text)
+        self.assertFalse(any(option.default for option in role_view.children[0].options))
 
         role_view.message = SimpleNamespace(id=1)
         role_interaction = FakeInteraction({"values": ["dd"]})
@@ -213,9 +220,14 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         done_view.message = SimpleNamespace(id=1)
 
         edit_interaction = FakeInteraction()
-        await done_view.children[0].callback(edit_interaction)
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
+            await done_view.children[0].callback(edit_interaction)
         reopened = edit_interaction.response.edit_message.await_args.kwargs["view"]
         self.assertIsInstance(reopened, RoleSelectView)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertNotIn("777", saved["registrations"])
 
 
 if __name__ == "__main__":
