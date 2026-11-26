@@ -137,6 +137,18 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         assert saved is not None
         self.assertEqual(saved["registrations"]["777"]["status"], STATUS_MAIN)
 
+    async def test_dd_can_choose_single_specialization(self) -> None:
+        view = SpecSelectView(self.bot, self.raid["id"], 777, "dd")
+        selected_id = view.children[0].options[0].value
+        interaction = FakeInteraction({"values": [selected_id]})
+
+        await view._on_spec(interaction)
+
+        new_view = interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertIsInstance(new_view, StatusView)
+        self.assertEqual(len(new_view.specs), 1)
+        self.assertEqual(new_view.specs[0]["id"], selected_id)
+
     async def test_existing_registration_can_be_changed_from_scratch(self) -> None:
         initial_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
         self.store.set_registration(
@@ -167,7 +179,7 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(spec_view, SpecSelectView)
         self.assertEqual(spec_view.role, "dd")
         self.assertEqual(spec_view.children[0].max_values, 2)
-        self.assertEqual(spec_view.children[0].min_values, 2)
+        self.assertEqual(spec_view.children[0].min_values, 1)
 
         new_spec_ids = [
             spec_view.children[0].options[0].value,
