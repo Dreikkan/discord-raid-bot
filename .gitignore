@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+data/store.json
+data/store.json.tmp
+.pytest_cache/
+logs/
+*.log

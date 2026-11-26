@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from raidbot.constants import STATUS_BENCH, STATUS_MAIN
+from raidbot.store import Store
+from raidbot.views import RaidPanelView, RoleSelectView, StatusView
+
+
+class FakeResponse:
+    def __init__(self) -> None:
+        self.send_message = AsyncMock()
+        self.edit_message = AsyncMock()
+        self.defer = AsyncMock()
+
+    def is_done(self) -> bool:
+        return False
+
+
+class FakeUser:
+    id = 777
+    name = "Tester"
+    display_name = "Тестовый игрок"
+
+
+class FakeInteraction:
+    def __init__(self, data: dict | None = None) -> None:
+        self.data = data or {}
+        self.user = FakeUser()
+        self.response = FakeResponse()
+        self.original_response = AsyncMock(return_value=SimpleNamespace(id=1))
+        self.edit_original_response = AsyncMock()
+
+
+class FakeBot:
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self.add_view = lambda *args, **kwargs: None
+
+
+class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        path = Path(self.temporary_directory.name) / "store.json"
+        self.store = Store(path)
+        self.bot = FakeBot(self.store)
+        self.guild_id = 1
+
+        settings = self.store.settings_for(self.guild_id)
+        self.store.add_spec(self.guild_id, "tank", "Страж", "🐻")
+        self.store.add_spec(self.guild_id, "heal", "Жрец", "✨")
+        self.store.add_spec(self.guild_id, "dd", "Маг", "🔮")
+        self.raid = self.store.create_raid(
+            guild_id=self.guild_id,
+            channel_id=2,
+            created_by=3,
+            title=settings["title"],
+            description="Тестовый рейд",
+            start_at=2_000_000_000,
+            limits=settings["limits"],
+            role_emojis=settings["role_emojis"],
+        )
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    async def test_public_button_opens_ephemeral_role_page(self) -> None:
+        view = RaidPanelView(self.bot, self.raid["id"])
+        interaction = FakeInteraction()
+        await view._start_registration(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        sent_view = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertIsInstance(sent_view, RoleSelectView)
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+
+    async def test_role_selection_opens_specialization_page(self) -> None:
+        view = RoleSelectView(self.bot, self.raid["id"], 777)
+        view.message = SimpleNamespace(id=1)
+        interaction = FakeInteraction({"values": ["tank"]})
+
+        await view._on_role(interaction)
+
+        interaction.response.edit_message.assert_awaited_once()
+        new_view = interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertEqual(new_view.role, "tank")
+        self.assertEqual(new_view.build_embed(self.raid).title, "Регистрация на рейд")
+
+    async def test_status_join_redirects_to_bench_when_full(self) -> None:
+        self.store.set_limits(self.guild_id, {"tank": 1, "heal": 3, "dd": 8})
+        self.raid = self.store.get_raid(self.raid["id"])
+        assert self.raid is not None
+        self.raid["limits"]["tank"] = 1
+        self.store.save()
+        self.store.set_registration(
+            self.raid["id"],
+            100,
+            role="tank",
+            spec_id="one",
+            spec_name="Страж",
+            spec_emoji="🐻",
+            display_name="Первый",
+            status=STATUS_MAIN,
+        )
+
+        spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        view = StatusView(self.bot, self.raid["id"], 777, "tank", spec)
+        interaction = FakeInteraction()
+
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
+            await view._set_status(interaction, status=STATUS_MAIN)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertEqual(saved["registrations"]["777"]["status"], STATUS_BENCH)
+        interaction.response.defer.assert_awaited_once()
+        interaction.edit_original_response.assert_awaited_once()
+        done_embed = interaction.edit_original_response.await_args.kwargs["embed"]
+        self.assertIn("скамью запасных", done_embed.description)
+
+    async def test_status_join_stays_main_when_space_is_available(self) -> None:
+        spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        view = StatusView(self.bot, self.raid["id"], 777, "tank", spec)
+        interaction = FakeInteraction()
+
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
+            await view._set_status(interaction, status=STATUS_MAIN)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertEqual(saved["registrations"]["777"]["status"], STATUS_MAIN)
+
+
+if __name__ == "__main__":
+    unittest.main()
