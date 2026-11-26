@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,14 @@ _locks: dict[int, asyncio.Lock] = {}
 
 @dataclass(slots=True)
 class RoleIconSyncResult:
+    updated: bool = False
+    uploaded: int = 0
+    emojis: dict[str, str] = field(default_factory=dict)
+    error: str | None = None
+
+
+@dataclass(slots=True)
+class SpecIconSyncResult:
     updated: bool = False
     uploaded: int = 0
     emojis: dict[str, str] = field(default_factory=dict)
@@ -164,6 +173,122 @@ async def sync_role_icons(
             )
 
         return RoleIconSyncResult(
+            updated=changed,
+            uploaded=uploaded,
+            emojis=new_emojis,
+            error="; ".join(errors) if errors else None,
+        )
+
+
+def _spec_emoji_name(icon_file: str) -> str:
+    stem = Path(icon_file).stem.casefold()
+    safe = re.sub(r"[^a-z0-9_]+", "_", stem).strip("_") or "icon"
+    return f"raid_spec_{safe}"[:32]
+
+
+async def sync_spec_icons(
+    guild: Any,
+    store: Store,
+    *,
+    force: bool = False,
+) -> SpecIconSyncResult:
+    """Upload specialization icon files as guild emojis and save their tags."""
+
+    async with _lock_for(int(guild.id)):
+        settings = store.settings_for(guild.id)
+        specs = settings.get("specs", [])
+        targets = [
+            spec
+            for spec in specs
+            if spec.get("icon_file")
+            and (
+                force
+                or not str(spec.get("emoji", "")).startswith("<")
+            )
+        ]
+        if not targets:
+            return SpecIconSyncResult()
+
+        errors: list[str] = []
+        existing = {emoji.name: emoji for emoji in getattr(guild, "emojis", [])}
+
+        try:
+            fetched = await guild.fetch_emojis()
+        except (discord.HTTPException, AttributeError):
+            log.exception("Не удалось получить список эмодзи сервера %s", guild.id)
+        else:
+            existing = {emoji.name: emoji for emoji in fetched}
+
+        me = getattr(guild, "me", None)
+        permissions = getattr(me, "guild_permissions", None)
+        can_manage = bool(permissions and permissions.manage_expressions)
+
+        new_emojis: dict[str, str] = {}
+        uploaded = 0
+
+        for spec in targets:
+            path = SPEC_ICON_DIR / Path(str(spec["icon_file"])).name
+            if not path.is_file():
+                errors.append(
+                    f"нет файла {path.name} для «{spec['name']}»"
+                )
+                continue
+
+            emoji_name = _spec_emoji_name(path.name)
+            emoji = existing.get(emoji_name)
+
+            if emoji is None:
+                if not can_manage:
+                    errors.append(
+                        f"нет права «Управлять выражениями» для загрузки иконки "
+                        f"«{spec['name']}»"
+                    )
+                    continue
+
+                try:
+                    image = path.read_bytes()
+                except OSError:
+                    log.exception("Не удалось прочитать иконку %s", path)
+                    errors.append(f"не удалось прочитать файл {path.name}")
+                    continue
+
+                if len(image) > _EMOJI_SIZE_LIMIT:
+                    errors.append(f"файл {path.name} больше 256 КБ")
+                    continue
+
+                try:
+                    emoji = await guild.create_custom_emoji(
+                        name=emoji_name,
+                        image=image,
+                        reason=f"Иконка специализации {spec['name']}",
+                    )
+                except (discord.HTTPException, ValueError, TypeError):
+                    log.exception(
+                        "Не удалось загрузить emoji %s на сервер %s",
+                        emoji_name,
+                        guild.id,
+                    )
+                    errors.append(
+                        f"не удалось загрузить иконку «{spec['name']}»"
+                    )
+                    continue
+
+                uploaded += 1
+                existing[emoji_name] = emoji
+
+            new_emojis[str(spec["id"])] = emoji_tag(emoji)
+
+        old_emojis = {
+            str(spec["id"]): str(spec.get("emoji", "")) for spec in specs
+        }
+        changed = any(
+            old_emojis.get(spec_id) != value
+            for spec_id, value in new_emojis.items()
+        )
+        if changed:
+            store.set_spec_emojis(guild.id, new_emojis)
+
+        return SpecIconSyncResult(
             updated=changed,
             uploaded=uploaded,
             emojis=new_emojis,

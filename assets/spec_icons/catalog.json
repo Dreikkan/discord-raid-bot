@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "specs": [
+    {
+      "id": "power",
+      "role": "tank",
+      "name": "Сила — Клинок громового крика, Копьё грозового разлома",
+      "icon_file": "power.png"
+    },
+    {
+      "id": "rain",
+      "role": "heal",
+      "name": "Потоп — Веер панацеи, Зонт теней души",
+      "icon_file": "rain.png"
+    },
+    {
+      "id": "dryness",
+      "role": "dd",
+      "name": "Сушь — Рукавицы небесного удара, Ривен твинблейдс",
+      "icon_file": "dryness.png"
+    },
+    {
+      "id": "dust",
+      "role": "dd",
+      "name": "Пыль — Несвязный веревочный дротик, Вечновесенний зонт",
+      "icon_file": "dust.png"
+    },
+    {
+      "id": "nameless",
+      "role": "dd",
+      "name": "Неймлесс — Безымянный меч, Безымянное копьё",
+      "icon_file": "nameless.png"
+    },
+    {
+      "id": "nefrit",
+      "role": "dd",
+      "name": "Нефрит — Весенний зонт, Веер чернильницы",
+      "icon_file": "nefrit.png"
+    },
+    {
+      "id": "sky-snake",
+      "role": "dd",
+      "name": "Воздушный змей — Перчатки небесной воли, Веревочный дротик небесной хватки",
+      "icon_file": "sky-snake.png"
+    },
+    {
+      "id": "strateg",
+      "role": "dd",
+      "name": "Умбра — Стратегический меч, Копьё небесного грома",
+      "icon_file": "strateg.png"
+    },
+    {
+      "id": "strenght",
+      "role": "dd",
+      "name": "Сила — Клинок губителя фаланги, Клинок рассекающий снег",
+      "icon_file": "strenght.png"
+    },
+    {
+      "id": "wind",
+      "role": "dd",
+      "name": "Ветер — Адские парные клинки, Смертельный канатный дротик",
+      "icon_file": "wind.png"
+    },
+    {
+      "id": "wing",
+      "role": "dd",
+      "name": "Крылья — Поясной барабан муз, Поклонник ивового изгиба",
+      "icon_file": "wing.png"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .assets import sync_role_icons
+from .assets import sync_role_icons, sync_spec_icons
 from .constants import (
     MAX_DESCRIPTION_LENGTH,
     MAX_SPEC_NAME_LENGTH,
@@ -136,14 +136,26 @@ class RaidCog(commands.Cog):
             return
 
         icon_warning = ""
-        icon_sync = await sync_role_icons(interaction.guild, self.bot.store)
-        if icon_sync.updated:
+        role_icon_sync = await sync_role_icons(interaction.guild, self.bot.store)
+        spec_icon_sync = await sync_spec_icons(interaction.guild, self.bot.store)
+        if role_icon_sync.updated or spec_icon_sync.updated:
             settings = self.bot.store.settings_for(interaction.guild.id)
-        if icon_sync.error:
+
+        icon_errors = [
+            error
+            for error in (role_icon_sync.error, spec_icon_sync.error)
+            if error
+        ]
+        if icon_errors:
+            details = "; ".join(icon_errors)
+            if len(details) > 1000:
+                details = f"{details[:999]}…"
             icon_warning = (
-                "\n⚠️ Иконки ролей не удалось применить полностью: "
-                f"{icon_sync.error}. Выдайте боту право «Управлять выражениями» "
-                "и выполните `/эмбед загрузить-иконки`."
+                "\n⚠️ Часть иконок не удалось применить: "
+                + details
+                + ". Выдайте боту право «Управлять выражениями» "
+                "и выполните `/эмбед загрузить-иконки` "
+                "и `/специализация загрузить-иконки`."
             )
 
         raid = self.bot.store.create_raid(
@@ -430,6 +442,41 @@ class RaidCog(commands.Cog):
         await interaction.response.send_message(
             f"✅ Специализация **{emoji} {spec['name']}** {action} "
             f"для роли «{ROLE_LABELS[normalized_role]}».",
+            ephemeral=True,
+        )
+
+    @spec.command(
+        name="загрузить-иконки",
+        description="Загрузить иконки специализаций из assets и применить их",
+    )
+    @admin_only
+    async def upload_spec_icons(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        if interaction.guild is None:
+            await interaction.followup.send(
+                "Команду нужно использовать на сервере.", ephemeral=True
+            )
+            return
+
+        result = await sync_spec_icons(
+            interaction.guild, self.bot.store, force=True
+        )
+        if result.error:
+            await interaction.followup.send(
+                "⚠️ Иконки специализаций применены не полностью.\n"
+                f"Ошибка: {result.error}.\n"
+                "Проверьте право бота «Управлять выражениями» и свободные слоты emoji.",
+                ephemeral=True,
+            )
+            return
+
+        if result.uploaded:
+            text = f"✅ Загружено новых emoji: **{result.uploaded}**."
+        else:
+            text = "✅ Иконки специализаций уже были загружены и применены."
+        await interaction.followup.send(
+            f"{text}\nОни будут использоваться в новых эмбедах.",
             ephemeral=True,
         )
 

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from raidbot.assets import sync_role_icons
+from raidbot.assets import sync_role_icons, sync_spec_icons
 from raidbot.store import Store
 
 
@@ -102,6 +102,48 @@ class RoleIconAssetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.store.settings_for(guild.id)["role_icons_source"], "assets"
         )
+
+
+class SpecIconAssetTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.temporary_directory.name) / "store.json")
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    async def test_uploads_catalog_spec_icons(self) -> None:
+        guild = FakeGuild()
+        result = await sync_spec_icons(guild, self.store)
+
+        self.assertEqual(result.uploaded, 11)
+        self.assertIsNone(result.error)
+        self.assertIn("raid_spec_dryness", guild.uploads)
+        self.assertIn("raid_spec_sky_snake", guild.uploads)
+        self.assertIn("raid_spec_strenght", guild.uploads)
+        self.assertIn("raid_spec_wing", guild.uploads)
+
+        settings = self.store.settings_for(guild.id)
+        self.assertTrue(all(str(spec["emoji"]).startswith("<") for spec in settings["specs"]))
+        self.assertTrue(all(spec.get("icon_file") for spec in settings["specs"]))
+
+    async def test_second_spec_sync_does_not_upload_again(self) -> None:
+        guild = FakeGuild()
+        await sync_spec_icons(guild, self.store)
+        uploads_before = len(guild.uploads)
+        result = await sync_spec_icons(guild, self.store)
+
+        self.assertEqual(result.uploaded, 0)
+        self.assertFalse(result.updated)
+        self.assertEqual(len(guild.uploads), uploads_before)
+
+    async def test_spec_upload_without_permission_reports_error(self) -> None:
+        guild = FakeGuild(can_manage=False)
+        result = await sync_spec_icons(guild, self.store)
+
+        self.assertEqual(result.uploaded, 0)
+        self.assertIn("Управлять выражениями", result.error or "")
+        self.assertEqual(guild.uploads, [])
 
 
 if __name__ == "__main__":

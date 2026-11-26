@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .catalog import bundled_catalog
 from .constants import (
     DEFAULT_LIMITS,
     DEFAULT_ROLE_EMOJIS,
@@ -28,13 +29,17 @@ _STORE_VERSION = 1
 
 
 def default_settings() -> dict[str, Any]:
+    catalog_version, catalog_specs = bundled_catalog()
+    for spec in catalog_specs:
+        spec.setdefault("emoji", "")
     return {
         "title": DEFAULT_TITLE,
         "limits": dict(DEFAULT_LIMITS),
         "role_emojis": dict(DEFAULT_ROLE_EMOJIS),
         "role_icons_source": "assets",
         "timezone": DEFAULT_TIMEZONE,
-        "specs": [],
+        "spec_catalog_version": catalog_version,
+        "specs": catalog_specs,
     }
 
 
@@ -161,9 +166,25 @@ class Store:
                 except SpecImportError:
                     emoji = ""
 
-                specs.append(
-                    {"id": spec_id, "role": role, "name": name, "emoji": emoji}
-                )
+                icon_file = Path(str(item.get("icon_file", "")).strip()).name
+                if Path(icon_file).suffix.casefold() not in {
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".webp",
+                    ".gif",
+                }:
+                    icon_file = ""
+
+                spec = {
+                    "id": spec_id,
+                    "role": role,
+                    "name": name,
+                    "emoji": emoji,
+                }
+                if icon_file:
+                    spec["icon_file"] = icon_file
+                specs.append(spec)
 
         settings["specs"] = specs
         return settings
@@ -234,6 +255,7 @@ class Store:
         for spec in settings["specs"]:
             if spec["role"] == role and spec["name"].casefold() == normalized_name:
                 spec["emoji"] = emoji
+                spec.pop("icon_file", None)
                 self._save()
                 return spec, False
 
@@ -302,6 +324,7 @@ class Store:
             )
             if existing is not None:
                 existing["emoji"] = emoji
+                existing.pop("icon_file", None)
                 continue
 
             proposed.append(
@@ -334,6 +357,19 @@ class Store:
             for spec in self.settings_for(guild_id)["specs"]
             if spec["role"] == role
         ]
+
+    def set_spec_emojis(
+        self, guild_id: str | int, emojis_by_spec_id: dict[str, str]
+    ) -> None:
+        settings = self.settings_for(guild_id)
+        changed = False
+        for spec in settings["specs"]:
+            value = emojis_by_spec_id.get(str(spec["id"]))
+            if value is not None and spec.get("emoji") != value:
+                spec["emoji"] = value
+                changed = True
+        if changed:
+            self._save()
 
     # --------------------------------------------------------------- Raids
 
