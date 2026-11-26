@@ -167,6 +167,7 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(spec_view, SpecSelectView)
         self.assertEqual(spec_view.role, "dd")
         self.assertEqual(spec_view.children[0].max_values, 2)
+        self.assertEqual(spec_view.children[0].min_values, 2)
 
         new_spec_ids = [
             spec_view.children[0].options[0].value,

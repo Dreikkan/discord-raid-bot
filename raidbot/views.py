@@ -288,8 +288,12 @@ class SpecSelectView(WizardView):
         ]
 
         select = discord.ui.Select(
-            placeholder="Выберите одну или две специализации",
-            min_values=1,
+            placeholder=(
+                "Выберите две специализации"
+                if len(specs) > 1
+                else "Выберите специализацию"
+            ),
+            min_values=min(2, len(specs)),
             max_values=min(2, len(specs)),
             options=options,
         )
@@ -307,7 +311,7 @@ class SpecSelectView(WizardView):
         role_emoji = str(raid.get("role_emojis", {}).get(self.role, "")).strip()
         specs_count = len(self.bot.store.specs_for_role(raid.get("guild_id"), self.role))
         if specs_count > 1:
-            instruction = "Выберите одну или две специализации."
+            instruction = "Выберите две специализации."
         else:
             instruction = "Выберите вашу специализацию."
         lines = [
@@ -332,7 +336,7 @@ class SpecSelectView(WizardView):
         values = [str(value) for value in (interaction.data.get("values") or [])]
         if not values or len(values) > 2:
             await interaction.response.send_message(
-                "Выберите одну или две специализации.", ephemeral=True
+                "Выберите нужное количество специализаций.", ephemeral=True
             )
             return
 
@@ -350,6 +354,18 @@ class SpecSelectView(WizardView):
             return
 
         available = self.bot.store.specs_for_role(raid["guild_id"], self.role)
+        required = min(2, len(available))
+        if len(values) != required:
+            await interaction.response.send_message(
+                (
+                    "Выберите две специализации."
+                    if required == 2
+                    else "Выберите специализацию."
+                ),
+                ephemeral=True,
+            )
+            return
+
         selected_ids = set(values)
         selected_specs = [
             spec for spec in available if spec["id"] in selected_ids
