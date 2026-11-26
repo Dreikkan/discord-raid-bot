@@ -22,10 +22,10 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(settings["title"], "Еженедельный рейд")
         self.assertEqual(settings["limits"], {"tank": 2, "heal": 3, "dd": 8})
         self.assertEqual(settings["role_icons_source"], "assets")
-        self.assertEqual(len(settings["specs"]), 11)
+        self.assertEqual(len(settings["specs"]), 12)
         self.assertEqual(
             {role: sum(1 for spec in settings["specs"] if spec["role"] == role) for role in ("tank", "heal", "dd")},
-            {"tank": 1, "heal": 1, "dd": 9},
+            {"tank": 1, "heal": 1, "dd": 10},
         )
         self.assertTrue(all(spec.get("icon_file") for spec in settings["specs"]))
 

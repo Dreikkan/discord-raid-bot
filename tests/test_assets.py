@@ -116,12 +116,13 @@ class SpecIconAssetTests(unittest.IsolatedAsyncioTestCase):
         guild = FakeGuild()
         result = await sync_spec_icons(guild, self.store)
 
-        self.assertEqual(result.uploaded, 11)
+        self.assertEqual(result.uploaded, 12)
         self.assertIsNone(result.error)
         self.assertIn("raid_spec_dryness", guild.uploads)
         self.assertIn("raid_spec_sky_snake", guild.uploads)
         self.assertIn("raid_spec_strenght", guild.uploads)
         self.assertIn("raid_spec_wing", guild.uploads)
+        self.assertIn("raid_spec_bolt", guild.uploads)
 
         settings = self.store.settings_for(guild.id)
         self.assertTrue(all(str(spec["emoji"]).startswith("<") for spec in settings["specs"]))

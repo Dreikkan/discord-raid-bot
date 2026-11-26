@@ -13,14 +13,14 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(CATALOG_PATH.is_file())
         _, specs = bundled_catalog()
 
-        self.assertEqual(len(specs), 11)
+        self.assertEqual(len(specs), 12)
         counts = {"tank": 0, "heal": 0, "dd": 0}
         for spec in specs:
             counts[spec["role"]] += 1
             self.assertLessEqual(len(spec["name"]), 100)
             self.assertTrue((SPEC_ICON_DIR / spec["icon_file"]).is_file(), spec)
 
-        self.assertEqual(counts, {"tank": 1, "heal": 1, "dd": 9})
+        self.assertEqual(counts, {"tank": 1, "heal": 1, "dd": 10})
 
     def test_expected_specializations_are_present(self) -> None:
         _, specs = bundled_catalog()
@@ -31,7 +31,8 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(by_id["rain"]["role"], "heal")
         self.assertIn("Воздушный змей", by_id["sky-snake"]["name"])
         self.assertIn("Крылья", by_id["wing"]["name"])
-        self.assertNotIn("bolt", by_id)
+        self.assertEqual(by_id["bolt"]["role"], "dd")
+        self.assertIn("Болт", by_id["bolt"]["name"])
 
 
 if __name__ == "__main__":
