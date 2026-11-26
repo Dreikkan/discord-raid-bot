@@ -103,15 +103,15 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
             self.raid["id"],
             100,
             role="tank",
-            spec_id="one",
-            spec_name="Страж",
-            spec_emoji="🐻",
+            specializations=[
+                {"id": "one", "name": "Страж", "emoji": "🐻"}
+            ],
             display_name="Первый",
             status=STATUS_MAIN,
         )
 
         spec = self.store.specs_for_role(self.guild_id, "tank")[0]
-        view = StatusView(self.bot, self.raid["id"], 777, "tank", spec)
+        view = StatusView(self.bot, self.raid["id"], 777, "tank", [spec])
         interaction = FakeInteraction()
 
         with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
@@ -127,7 +127,7 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_status_join_stays_main_when_space_is_available(self) -> None:
         spec = self.store.specs_for_role(self.guild_id, "tank")[0]
-        view = StatusView(self.bot, self.raid["id"], 777, "tank", spec)
+        view = StatusView(self.bot, self.raid["id"], 777, "tank", [spec])
         interaction = FakeInteraction()
 
         with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
@@ -143,9 +143,7 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
             self.raid["id"],
             777,
             role="tank",
-            spec_id=initial_spec["id"],
-            spec_name=initial_spec["name"],
-            spec_emoji=initial_spec["emoji"],
+            specializations=[initial_spec],
             display_name="Старое имя",
             status=STATUS_MAIN,
         )
@@ -168,14 +166,19 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         spec_view = role_interaction.response.edit_message.await_args.kwargs["view"]
         self.assertIsInstance(spec_view, SpecSelectView)
         self.assertEqual(spec_view.role, "dd")
+        self.assertEqual(spec_view.children[0].max_values, 2)
 
-        new_spec_id = spec_view.children[0].options[0].value
+        new_spec_ids = [
+            spec_view.children[0].options[0].value,
+            spec_view.children[0].options[1].value,
+        ]
         spec_view.message = SimpleNamespace(id=1)
-        spec_interaction = FakeInteraction({"values": [new_spec_id]})
+        spec_interaction = FakeInteraction({"values": new_spec_ids})
         await spec_view._on_spec(spec_interaction)
         status_view = spec_interaction.response.edit_message.await_args.kwargs["view"]
         self.assertIsInstance(status_view, StatusView)
         self.assertEqual(status_view.role, "dd")
+        self.assertEqual(len(status_view.specs), 2)
 
         final_interaction = FakeInteraction()
         with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
@@ -185,7 +188,10 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         assert saved is not None
         registration = saved["registrations"]["777"]
         self.assertEqual(registration["role"], "dd")
-        self.assertEqual(registration["spec_id"], new_spec_id)
+        self.assertEqual(
+            [spec["id"] for spec in registration["specializations"]],
+            new_spec_ids,
+        )
         self.assertEqual(registration["status"], STATUS_BENCH)
         self.assertEqual(registration["display_name"], "Тестовый игрок")
 

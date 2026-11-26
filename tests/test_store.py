@@ -59,9 +59,9 @@ class StoreTests(unittest.TestCase):
             raid["id"],
             10,
             role="tank",
-            spec_id="spec1",
-            spec_name="Страж",
-            spec_emoji="🐻",
+            specializations=[
+                {"id": "spec1", "name": "Страж", "emoji": "🐻"}
+            ],
             display_name="Игрок",
             status=STATUS_MAIN,
         )
@@ -69,9 +69,10 @@ class StoreTests(unittest.TestCase):
             raid["id"],
             11,
             role="dd",
-            spec_id="spec2",
-            spec_name="Маг",
-            spec_emoji="🔮",
+            specializations=[
+                {"id": "spec2", "name": "Маг", "emoji": "🔮"},
+                {"id": "spec3", "name": "Воин", "emoji": "⚔️"},
+            ],
             display_name="Второй",
             status=STATUS_BENCH,
         )
@@ -81,7 +82,10 @@ class StoreTests(unittest.TestCase):
         self.assertIsNotNone(saved)
         assert saved is not None
         self.assertEqual(saved["message_id"], "99")
-        self.assertEqual(saved["registrations"]["10"]["spec_name"], "Страж")
+        self.assertEqual(
+            saved["registrations"]["10"]["specializations"][0]["name"], "Страж"
+        )
+        self.assertEqual(len(saved["registrations"]["11"]["specializations"]), 2)
         self.assertEqual(saved["registrations"]["11"]["status"], STATUS_BENCH)
 
         self.assertEqual(len(reloaded.main_by_role(saved, "tank")), 1)

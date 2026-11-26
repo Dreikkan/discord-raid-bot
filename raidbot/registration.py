@@ -5,6 +5,40 @@ from typing import Any
 from .constants import ROLE_ORDER, STATUS_ABSENT, STATUS_BENCH, STATUS_MAIN
 
 
+def registration_specializations(
+    registration: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Return up to two specializations, supporting old single-spec records."""
+
+    raw_specs = registration.get("specializations")
+    if isinstance(raw_specs, list):
+        specs: list[dict[str, str]] = []
+        for raw in raw_specs[:2]:
+            if not isinstance(raw, dict):
+                continue
+            specs.append(
+                {
+                    "id": str(raw.get("id", "")),
+                    "name": str(raw.get("name", "")),
+                    "emoji": str(raw.get("emoji", "")),
+                }
+            )
+        if specs:
+            return specs
+
+    # Backward compatibility with registrations created before dual specs.
+    if registration.get("spec_id") or registration.get("spec_name"):
+        return [
+            {
+                "id": str(registration.get("spec_id", "")),
+                "name": str(registration.get("spec_name", "")),
+                "emoji": str(registration.get("spec_emoji", "")),
+            }
+        ]
+
+    return []
+
+
 def count_main_for_role(raid: dict[str, Any], role: str, *, exclude_user_id: str | None = None) -> int:
     count = 0
     for user_id, registration in raid.get("registrations", {}).items():

@@ -25,8 +25,10 @@ def make_raid() -> dict:
             "1": {
                 "role": "tank",
                 "status": STATUS_MAIN,
-                "spec_name": "Страж",
-                "spec_emoji": "🐻",
+                "specializations": [
+                    {"id": "guard", "name": "Страж", "emoji": "🐻"},
+                    {"id": "mage", "name": "Маг", "emoji": "🔮"},
+                ],
                 "display_name": "Игрок 1",
             },
             "2": {
@@ -73,7 +75,7 @@ class EmbedTests(unittest.TestCase):
         self.assertIn("🛡️ Танк: (2/2)", fields)
         self.assertIn("💚 Хил: (1/3)", fields)
         self.assertIn("⚔️ ДД: (0/4)", fields)
-        self.assertIn("🐻 Игрок 1", fields["🛡️ Танк: (2/2)"])
+        self.assertIn("🐻 🔮 Игрок 1", fields["🛡️ Танк: (2/2)"])
         self.assertIn("🩸 Игрок\\_2", fields["🛡️ Танк: (2/2)"])
         self.assertIn("🔮 Игрок 5", fields["🪑 Скамья запасных (1)"])
         self.assertIn("⚔️ Игрок 6", fields["❌ Буду отсутствовать (1)"])
@@ -93,7 +95,7 @@ class EmbedTests(unittest.TestCase):
         self.assertTrue(all(field.inline for field in role_fields))
 
         tank_lines = role_fields[0].value.splitlines()
-        self.assertEqual(tank_lines[0], "🐻 Игрок 1")
+        self.assertEqual(tank_lines[0], "🐻 🔮 Игрок 1")
         self.assertEqual(tank_lines[1], "🩸 Игрок\\_2")
         self.assertTrue(role_fields[2].value == "—")
 
@@ -154,9 +156,7 @@ class EmbedTests(unittest.TestCase):
                 raid["id"],
                 777,
                 role="tank",
-                spec_id=spec["id"],
-                spec_name=spec["name"],
-                spec_emoji=spec["emoji"],
+                specializations=[spec],
                 display_name="Рейдер",
                 status=STATUS_MAIN,
             )

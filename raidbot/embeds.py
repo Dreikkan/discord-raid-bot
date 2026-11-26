@@ -15,6 +15,7 @@ from .constants import (
     STATUS_BENCH,
     STATUS_MAIN,
 )
+from .registration import registration_specializations
 from .text import escape_markdown
 
 _FIELD_VALUE_LIMIT = 1024
@@ -28,9 +29,13 @@ def _display_name(registration: dict[str, Any], fallback: str) -> str:
 
 
 def _player_label(user_id: str, registration: dict[str, Any]) -> str:
-    emoji = str(registration.get("spec_emoji") or "").strip()
+    icons = [
+        str(spec.get("emoji") or "").strip()
+        for spec in registration_specializations(registration)
+    ]
+    icons_text = " ".join(icon for icon in icons if icon)
     name = _display_name(registration, f"<@{user_id}>")
-    return f"{emoji} {name}".strip()
+    return f"{icons_text} {name}".strip()
 
 
 def _format_players(

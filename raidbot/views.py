@@ -22,7 +22,11 @@ from .constants import (
     WIZARD_TIMEOUT_SECONDS,
 )
 from .embeds import build_raid_embed
-from .registration import count_main_for_role, resolve_requested_status
+from .registration import (
+    count_main_for_role,
+    registration_specializations,
+    resolve_requested_status,
+)
 from .specs import to_partial_emoji
 
 log = logging.getLogger(__name__)
@@ -39,11 +43,13 @@ def _current_registration(
 
 
 def _registration_description(registration: dict[str, Any]) -> str:
-    emoji = str(registration.get("spec_emoji") or "").strip()
-    spec_name = str(registration.get("spec_name") or "Специализация")
     role = ROLE_LABELS.get(str(registration.get("role")), "Роль")
     status = STATUS_LABELS.get(str(registration.get("status")), "Статус")
-    details = f"{emoji} {spec_name}".strip()
+    specs = registration_specializations(registration)
+    details = ", ".join(
+        f"{str(spec.get('emoji') or '').strip()} {spec['name']}".strip()
+        for spec in specs
+    ) or "Специализация не выбрана"
     return f"{role} · {details} · {status}"
 
 
@@ -264,7 +270,9 @@ class SpecSelectView(WizardView):
 
         raid = bot.store.get_raid(raid_id) or {}
         current = _current_registration(raid, user_id) or {}
-        current_spec_id = current.get("spec_id")
+        current_spec_ids = {
+            spec["id"] for spec in registration_specializations(current)
+        }
         specs = bot.store.specs_for_role(raid.get("guild_id"), role)[
             :MAX_SPECS_PER_ROLE
         ]
@@ -274,15 +282,15 @@ class SpecSelectView(WizardView):
                 label=spec["name"][:100],
                 value=spec["id"],
                 emoji=to_partial_emoji(spec.get("emoji", "")),
-                default=(spec["id"] == current_spec_id),
+                default=(spec["id"] in current_spec_ids),
             )
             for spec in specs
         ]
 
         select = discord.ui.Select(
-            placeholder="Выберите специализацию",
+            placeholder="Выберите одну или две специализации",
             min_values=1,
-            max_values=1,
+            max_values=min(2, len(specs)),
             options=options,
         )
         select.callback = self._on_spec  # type: ignore[method-assign]
@@ -297,10 +305,15 @@ class SpecSelectView(WizardView):
 
     def build_embed(self, raid: dict[str, Any]) -> discord.Embed:
         role_emoji = str(raid.get("role_emojis", {}).get(self.role, "")).strip()
+        specs_count = len(self.bot.store.specs_for_role(raid.get("guild_id"), self.role))
+        if specs_count > 1:
+            instruction = "Выберите одну или две специализации."
+        else:
+            instruction = "Выберите вашу специализацию."
         lines = [
-            "**Шаг 2 из 3 · Специализация**",
+            "**Шаг 2 из 3 · Специализации**",
             f"Роль: {role_emoji} **{ROLE_LABELS[self.role]}**".strip(),
-            "Выберите вашу специализацию.",
+            instruction,
         ]
         if self.warning:
             lines.extend(("", f"⚠️ {self.warning}"))
@@ -316,11 +329,13 @@ class SpecSelectView(WizardView):
 
     async def _on_spec(self, interaction: discord.Interaction) -> None:
         assert isinstance(interaction.data, dict)
-        values = interaction.data.get("values") or []
-        if not values:
+        values = [str(value) for value in (interaction.data.get("values") or [])]
+        if not values or len(values) > 2:
+            await interaction.response.send_message(
+                "Выберите одну или две специализации.", ephemeral=True
+            )
             return
 
-        spec_id = str(values[0])
         raid = self.bot.store.get_raid(self.raid_id)
         if raid is None or not _is_open(raid):
             self.stop()
@@ -334,18 +349,13 @@ class SpecSelectView(WizardView):
             )
             return
 
-        spec = next(
-            (
-                candidate
-                for candidate in self.bot.store.specs_for_role(
-                    raid["guild_id"], self.role
-                )
-                if candidate["id"] == spec_id
-            ),
-            None,
-        )
-        if spec is None:
-            warning = "Эта специализация больше недоступна. Выберите другую."
+        available = self.bot.store.specs_for_role(raid["guild_id"], self.role)
+        selected_ids = set(values)
+        selected_specs = [
+            spec for spec in available if spec["id"] in selected_ids
+        ]
+        if len(selected_specs) != len(values):
+            warning = "Одна из специализаций больше недоступна. Выберите заново."
             new_view = RoleSelectView(
                 self.bot, self.raid_id, self.user_id, warning=warning
             )
@@ -353,7 +363,7 @@ class SpecSelectView(WizardView):
             return
 
         new_view = StatusView(
-            self.bot, self.raid_id, self.user_id, self.role, spec
+            self.bot, self.raid_id, self.user_id, self.role, selected_specs
         )
         await self._move_to(interaction, new_view, raid)
 
@@ -365,11 +375,11 @@ class StatusView(WizardView):
         raid_id: str,
         user_id: int,
         role: str,
-        spec: dict[str, Any],
+        specs: list[dict[str, Any]],
     ) -> None:
         super().__init__(bot, raid_id, user_id)
         self.role = role
-        self.spec = spec
+        self.specs = specs
 
         self._add_status_button(
             "Присоединиться", "✅", discord.ButtonStyle.success, STATUS_MAIN
@@ -418,12 +428,18 @@ class StatusView(WizardView):
         )
         free_slots = max(0, limit - occupied_by_others)
         role_emoji = str(raid.get("role_emojis", {}).get(self.role, "")).strip()
-        spec_emoji = str(self.spec.get("emoji") or "").strip()
+        spec_header = (
+            "**Специализации:**" if len(self.specs) > 1 else "**Специализация:**"
+        )
 
         lines = [
             "**Шаг 3 из 3 · Статус**",
             f"Роль: {role_emoji} **{ROLE_LABELS[self.role]}**".strip(),
-            f"Специализация: {spec_emoji} **{self.spec['name']}**".strip(),
+            spec_header,
+            *[
+                f"{str(spec.get('emoji') or '').strip()} **{spec['name']}**".strip()
+                for spec in self.specs
+            ],
             f"Свободно мест в основном составе: **{free_slots}/{limit}**.",
         ]
 
@@ -495,9 +511,7 @@ class StatusView(WizardView):
             self.raid_id,
             self.user_id,
             role=self.role,
-            spec_id=str(self.spec["id"]),
-            spec_name=str(self.spec["name"]),
-            spec_emoji=str(self.spec.get("emoji") or ""),
+            specializations=self.specs,
             display_name=str(display_name),
             status=effective_status,
         )
@@ -507,7 +521,7 @@ class StatusView(WizardView):
         done = build_done_embed(
             raid=raid,
             role=self.role,
-            spec=self.spec,
+            specs=self.specs,
             status=effective_status,
             redirected=redirected,
         )
@@ -551,12 +565,11 @@ def build_done_embed(
     *,
     raid: dict[str, Any],
     role: str,
-    spec: dict[str, Any],
+    specs: list[dict[str, Any]],
     status: str,
     redirected: bool,
 ) -> discord.Embed:
     role_emoji = str(raid.get("role_emojis", {}).get(role, "")).strip()
-    spec_emoji = str(spec.get("emoji") or "").strip()
 
     if status == STATUS_MAIN:
         title = "Вы записаны в основной состав"
@@ -586,14 +599,18 @@ def build_done_embed(
         inline=True,
     )
     embed.add_field(
-        name="Специализация",
-        value=f"{spec_emoji} {spec['name']}".strip(),
-        inline=True,
-    )
-    embed.add_field(
         name="Статус",
         value=STATUS_LABELS[status],
         inline=True,
+    )
+    embed.add_field(
+        name="Специализации" if len(specs) > 1 else "Специализация",
+        value="\n".join(
+            f"{str(spec.get('emoji') or '').strip()} {spec['name']}".strip()
+            for spec in specs
+        )
+        or "—",
+        inline=False,
     )
     embed.set_footer(
         text="Изменить запись — кнопкой «Изменить запись» или повторным «Зарегистрироваться»."

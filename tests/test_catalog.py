@@ -44,8 +44,8 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(by_id["power"]["role"], "tank")
         self.assertEqual(by_id["rain"]["role"], "heal")
         self.assertEqual(by_id["bolt"]["role"], "dd")
-        self.assertIn("Воздушный змей", by_id["sky-snake"]["name"])
-        self.assertIn("Крылья", by_id["wing"]["name"])
+        self.assertIn("Перчатки небесной воли", by_id["sky-snake"]["name"])
+        self.assertIn("Поясной барабан муз", by_id["wing"]["name"])
 
     def test_role_emojis_are_static_application_emojis(self) -> None:
         expected = {

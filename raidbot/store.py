@@ -206,18 +206,22 @@ class Store:
         user_id: str | int,
         *,
         role: str,
-        spec_id: str,
-        spec_name: str,
-        spec_emoji: str,
+        specializations: list[dict[str, str]],
         display_name: str,
         status: str,
     ) -> None:
         raid = self.data["raids"][raid_id]
+        clean_specs = [
+            {
+                "id": str(spec["id"]),
+                "name": str(spec["name"]),
+                "emoji": str(spec.get("emoji") or ""),
+            }
+            for spec in specializations
+        ]
         raid["registrations"][str(user_id)] = {
             "role": role,
-            "spec_id": spec_id,
-            "spec_name": spec_name,
-            "spec_emoji": spec_emoji,
+            "specializations": clean_specs,
             "display_name": display_name,
             "status": status,
             "updated_at": int(time.time()),
