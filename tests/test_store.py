@@ -20,7 +20,7 @@ class StoreTests(unittest.TestCase):
     def test_defaults_and_persistence(self) -> None:
         settings = self.store.settings_for(123)
         self.assertEqual(settings["title"], "Еженедельный рейд")
-        self.assertEqual(settings["limits"], {"tank": 2, "heal": 3, "dd": 8})
+        self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
         self.assertEqual(len(settings["specs"]), 12)
         self.assertTrue(all(spec["emoji"].startswith("<:") for spec in settings["specs"]))
 
