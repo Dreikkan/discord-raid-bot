@@ -199,6 +199,10 @@ class RoleSelectView(WizardView):
         current = _current_registration(raid, self.user_id)
         if current:
             lines.extend(("", f"**Текущая запись:** {_registration_description(current)}"))
+            lines.append(
+                "Можно выбрать роль, специализацию и статус заново — "
+                "текущая запись заменится после подтверждения."
+            )
 
         return _wizard_embed(raid, "Регистрация на рейд", "\n".join(lines))
 
@@ -507,7 +511,40 @@ class StatusView(WizardView):
             status=effective_status,
             redirected=redirected,
         )
-        await interaction.edit_original_response(embed=done, view=None)
+        done_view = RegistrationDoneView(self.bot, self.raid_id, self.user_id)
+        await interaction.edit_original_response(embed=done, view=done_view)
+        done_view.message = await interaction.original_response()
+
+
+class RegistrationDoneView(WizardView):
+    """Confirmation view that reopens the full role/spec/status wizard."""
+
+    def __init__(self, bot: Any, raid_id: str, user_id: int) -> None:
+        super().__init__(bot, raid_id, user_id)
+        button = discord.ui.Button(
+            label="Изменить запись",
+            emoji="✏️",
+            style=discord.ButtonStyle.secondary,
+        )
+        button.callback = self._edit  # type: ignore[method-assign]
+        self.add_item(button)
+
+    async def _edit(self, interaction: discord.Interaction) -> None:
+        raid = self.bot.store.get_raid(self.raid_id)
+        if raid is None or not _is_open(raid):
+            self.stop()
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="Запись закрыта",
+                    description="Этот рейд уже начался или был удалён.",
+                    color=discord.Color.dark_grey(),
+                ),
+                view=None,
+            )
+            return
+
+        new_view = RoleSelectView(self.bot, self.raid_id, self.user_id)
+        await self._move_to(interaction, new_view, raid)
 
 
 def build_done_embed(
@@ -559,7 +596,7 @@ def build_done_embed(
         inline=True,
     )
     embed.set_footer(
-        text="Изменить запись можно повторным нажатием «Зарегистрироваться»."
+        text="Изменить запись — кнопкой «Изменить запись» или повторным «Зарегистрироваться»."
     )
     return embed
 

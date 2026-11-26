@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, patch
 
 from raidbot.constants import STATUS_BENCH, STATUS_MAIN
 from raidbot.store import Store
-from raidbot.views import RaidPanelView, RoleSelectView, StatusView
+from raidbot.views import (
+    RaidPanelView,
+    RegistrationDoneView,
+    RoleSelectView,
+    SpecSelectView,
+    StatusView,
+)
 
 
 class FakeResponse:
@@ -130,6 +136,67 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         saved = self.store.get_raid(self.raid["id"])
         assert saved is not None
         self.assertEqual(saved["registrations"]["777"]["status"], STATUS_MAIN)
+
+    async def test_existing_registration_can_be_changed_from_scratch(self) -> None:
+        initial_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        self.store.set_registration(
+            self.raid["id"],
+            777,
+            role="tank",
+            spec_id=initial_spec["id"],
+            spec_name=initial_spec["name"],
+            spec_emoji=initial_spec["emoji"],
+            display_name="Старое имя",
+            status=STATUS_MAIN,
+        )
+
+        panel = RaidPanelView(self.bot, self.raid["id"])
+        first_interaction = FakeInteraction()
+        await panel._start_registration(first_interaction)
+        role_view = first_interaction.response.send_message.await_args.kwargs["view"]
+        self.assertIsInstance(role_view, RoleSelectView)
+
+        raid = self.store.get_raid(self.raid["id"])
+        assert raid is not None
+        role_text = role_view.build_embed(raid).description or ""
+        self.assertIn("Текущая запись:", role_text)
+        self.assertIn("текущая запись заменится", role_text)
+
+        role_view.message = SimpleNamespace(id=1)
+        role_interaction = FakeInteraction({"values": ["dd"]})
+        await role_view._on_role(role_interaction)
+        spec_view = role_interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertIsInstance(spec_view, SpecSelectView)
+        self.assertEqual(spec_view.role, "dd")
+
+        new_spec_id = spec_view.children[0].options[0].value
+        spec_view.message = SimpleNamespace(id=1)
+        spec_interaction = FakeInteraction({"values": [new_spec_id]})
+        await spec_view._on_spec(spec_interaction)
+        status_view = spec_interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertIsInstance(status_view, StatusView)
+        self.assertEqual(status_view.role, "dd")
+
+        final_interaction = FakeInteraction()
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
+            await status_view._set_status(final_interaction, status=STATUS_BENCH)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        registration = saved["registrations"]["777"]
+        self.assertEqual(registration["role"], "dd")
+        self.assertEqual(registration["spec_id"], new_spec_id)
+        self.assertEqual(registration["status"], STATUS_BENCH)
+        self.assertEqual(registration["display_name"], "Тестовый игрок")
+
+        done_view = final_interaction.edit_original_response.await_args.kwargs["view"]
+        self.assertIsInstance(done_view, RegistrationDoneView)
+        done_view.message = SimpleNamespace(id=1)
+
+        edit_interaction = FakeInteraction()
+        await done_view.children[0].callback(edit_interaction)
+        reopened = edit_interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertIsInstance(reopened, RoleSelectView)
 
 
 if __name__ == "__main__":
