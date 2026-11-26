@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 
 from raidbot.time_utils import (
     TimeInputError,
+    combine_date_time,
     format_timestamp,
     parse_start_at,
+    parse_time_value,
     parse_timezone,
 )
 
@@ -53,6 +55,18 @@ class TimeUtilsTests(unittest.TestCase):
 
     def test_timestamp_markup(self) -> None:
         self.assertEqual(format_timestamp(123, "t"), "<t:123:t>")
+
+    def test_parse_time_and_combine_date(self) -> None:
+        self.assertEqual(parse_time_value("20:30"), time(20, 30))
+        self.assertEqual(parse_time_value("20.30"), time(20, 30))
+        self.assertEqual(
+            combine_date_time(
+                date(2026, 10, 26), time(20, 30), "Europe/Moscow"
+            ),
+            parse_start_at("26.10.2026", "20:30", "Europe/Moscow"),
+        )
+        with self.assertRaises(TimeInputError):
+            parse_time_value("25:00")
 
 
 if __name__ == "__main__":

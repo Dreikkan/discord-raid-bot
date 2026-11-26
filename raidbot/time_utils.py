@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import (
+    date as date_type,
+    datetime,
+    time as time_type,
+    timedelta,
+    timezone,
+    tzinfo,
+)
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 _DATE_FORMATS = ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d")
@@ -72,10 +79,41 @@ def parse_timezone(value: str) -> tuple[str, tzinfo]:
     return raw, zone
 
 
+def parse_time_value(time_text: str) -> time_type:
+    for time_format in _TIME_FORMATS:
+        try:
+            return datetime.strptime(time_text.strip(), time_format).time()
+        except ValueError:
+            continue
+
+    raise TimeInputError(
+        "Не удалось прочитать время. Используйте формат ЧЧ:ММ, например 20:30."
+    )
+
+
+def combine_date_time(
+    date_value: date_type,
+    time_value: time_type,
+    timezone_text: str,
+) -> int:
+    timezone_name, zone = parse_timezone(timezone_text)
+    naive = datetime.combine(date_value, time_value)
+    aware = naive.replace(tzinfo=zone)
+
+    # ZoneInfo happily assigns a non-existent local time during a DST gap.
+    # Detect it with a UTC round-trip.
+    round_trip = aware.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+    if round_trip != naive:
+        raise TimeInputError(
+            f"В часовом поясе {timezone_name} такого времени не существует "
+            "из-за перехода на летнее/зимнее время."
+        )
+
+    return int(aware.timestamp())
+
+
 def parse_start_at(date_text: str, time_text: str, timezone_text: str) -> int:
     """Parse DD.MM.YYYY + HH:MM in a timezone and return a Unix timestamp."""
-
-    timezone_name, zone = parse_timezone(timezone_text)
 
     parsed_date = None
     for date_format in _DATE_FORMATS:
@@ -91,32 +129,9 @@ def parse_start_at(date_text: str, time_text: str, timezone_text: str) -> int:
             "например 26.10.2026."
         )
 
-    parsed_time = None
-    for time_format in _TIME_FORMATS:
-        try:
-            parsed_time = datetime.strptime(time_text.strip(), time_format).time()
-            break
-        except ValueError:
-            continue
-
-    if parsed_time is None:
-        raise TimeInputError(
-            "Не удалось прочитать время. Используйте формат ЧЧ:ММ, например 20:30."
-        )
-
-    naive = datetime.combine(parsed_date, parsed_time)
-    aware = naive.replace(tzinfo=zone)
-
-    # ZoneInfo happily assigns a non-existent local time during a DST gap.
-    # Detect it with a UTC round-trip.
-    round_trip = aware.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
-    if round_trip != naive:
-        raise TimeInputError(
-            f"В часовом поясе {timezone_name} такого времени не существует "
-            "из-за перехода на летнее/зимнее время."
-        )
-
-    return int(aware.timestamp())
+    return combine_date_time(
+        parsed_date, parse_time_value(time_text), timezone_text
+    )
 
 
 def format_timestamp(timestamp: int, style: str = "F") -> str:

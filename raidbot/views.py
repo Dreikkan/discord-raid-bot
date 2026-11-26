@@ -13,6 +13,7 @@ from .constants import (
     EMBED_COLOR,
     MAX_SPECS_PER_ROLE,
     PUBLIC_BUTTON_PREFIX,
+    RAID_ROLE_MENTION_ID,
     ROLE_LABELS,
     ROLE_ORDER,
     STATUS_ABSENT,
@@ -655,7 +656,14 @@ async def post_raid_panel(
     bot: Any, channel: discord.abc.Messageable, raid: dict[str, Any]
 ) -> discord.Message:
     view = RaidPanelView(bot, raid["id"])
-    message = await channel.send(embed=build_raid_embed(raid), view=view)
+    message = await channel.send(
+        content=f"<@&{RAID_ROLE_MENTION_ID}>",
+        embed=build_raid_embed(raid),
+        view=view,
+        allowed_mentions=discord.AllowedMentions(
+            everyone=False, users=False, roles=True
+        ),
+    )
     bot.add_view(view, message_id=message.id)
     return message
 
