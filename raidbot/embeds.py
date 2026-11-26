@@ -79,7 +79,7 @@ def _format_players(
 def _role_field_name(raid: dict[str, Any], role: str, count: int) -> str:
     emoji = str(raid.get("role_emojis", {}).get(role, "")).strip()
     limit = int(raid.get("limits", {}).get(role, 0))
-    label = f"{ROLE_LABELS[role]} ({count}/{limit})"
+    label = f"{ROLE_LABELS[role]}: ({count}/{limit})"
     return f"{emoji} {label}".strip()
 
 

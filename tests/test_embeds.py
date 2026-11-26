@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from raidbot.constants import (
     STATUS_ABSENT,
@@ -8,6 +10,7 @@ from raidbot.constants import (
     STATUS_MAIN,
 )
 from raidbot.embeds import build_raid_embed
+from raidbot.store import Store
 
 
 def make_raid() -> dict:
@@ -67,13 +70,32 @@ class EmbedTests(unittest.TestCase):
         self.assertIn("Сбор в Discord.", embed.description)
 
         fields = {field.name: field.value for field in embed.fields}
-        self.assertIn("🛡️ Танк (2/2)", fields)
-        self.assertIn("💚 Хил (1/3)", fields)
-        self.assertIn("⚔️ ДД (0/4)", fields)
-        self.assertIn("🐻 Игрок 1", fields["🛡️ Танк (2/2)"])
-        self.assertIn("🩸 Игрок\\_2", fields["🛡️ Танк (2/2)"])
+        self.assertIn("🛡️ Танк: (2/2)", fields)
+        self.assertIn("💚 Хил: (1/3)", fields)
+        self.assertIn("⚔️ ДД: (0/4)", fields)
+        self.assertIn("🐻 Игрок 1", fields["🛡️ Танк: (2/2)"])
+        self.assertIn("🩸 Игрок\\_2", fields["🛡️ Танк: (2/2)"])
         self.assertIn("🔮 Игрок 5", fields["🪑 Скамья запасных (1)"])
         self.assertIn("⚔️ Игрок 6", fields["❌ Буду отсутствовать (1)"])
+
+    def test_three_role_columns_and_icon_before_name(self) -> None:
+        embed = build_raid_embed(make_raid())
+        role_fields = embed.fields[:3]
+
+        self.assertEqual(
+            [field.name for field in role_fields],
+            [
+                "🛡️ Танк: (2/2)",
+                "💚 Хил: (1/3)",
+                "⚔️ ДД: (0/4)",
+            ],
+        )
+        self.assertTrue(all(field.inline for field in role_fields))
+
+        tank_lines = role_fields[0].value.splitlines()
+        self.assertEqual(tank_lines[0], "🐻 Игрок 1")
+        self.assertEqual(tank_lines[1], "🩸 Игрок\\_2")
+        self.assertTrue(role_fields[2].value == "—")
 
     def test_absent_player_is_not_in_main_fields(self) -> None:
         embed = build_raid_embed(make_raid())
@@ -90,7 +112,7 @@ class EmbedTests(unittest.TestCase):
         raid["registrations"] = {}
         embed = build_raid_embed(raid)
         fields = {field.name: field.value for field in embed.fields}
-        self.assertEqual(fields["🛡️ Танк (0/2)"], "—")
+        self.assertEqual(fields["🛡️ Танк: (0/2)"], "—")
         self.assertEqual(fields["🪑 Скамья запасных (0)"], "—")
 
     def test_embed_total_length_stays_within_discord_limit(self) -> None:
@@ -112,6 +134,45 @@ class EmbedTests(unittest.TestCase):
             total += len(field.name) + len(field.value)
         self.assertLessEqual(total, 6000)
         self.assertTrue(any("…" in field.value for field in embed.fields))
+
+    def test_static_catalog_registration_goes_to_three_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = Store(Path(temporary_directory) / "store.json")
+            settings = store.settings_for(1)
+            spec = store.specs_for_role(1, "tank")[0]
+            raid = store.create_raid(
+                guild_id=1,
+                channel_id=2,
+                created_by=3,
+                title=settings["title"],
+                description="Тест",
+                start_at=2_000_000_000,
+                limits=settings["limits"],
+                role_emojis=settings["role_emojis"],
+            )
+            store.set_registration(
+                raid["id"],
+                777,
+                role="tank",
+                spec_id=spec["id"],
+                spec_name=spec["name"],
+                spec_emoji=spec["emoji"],
+                display_name="Рейдер",
+                status=STATUS_MAIN,
+            )
+            saved = store.get_raid(raid["id"])
+            assert saved is not None
+            embed = build_raid_embed(saved)
+
+        role_fields = embed.fields[:3]
+        self.assertTrue(all(field.inline for field in role_fields))
+        self.assertTrue(role_fields[0].name.startswith("<:tank:"))
+        self.assertIn("Танк:", role_fields[0].name)
+        self.assertTrue(role_fields[1].name.startswith("<:heal:"))
+        self.assertIn("Хил:", role_fields[1].name)
+        self.assertTrue(role_fields[2].name.startswith("<:DD:"))
+        self.assertIn("ДД:", role_fields[2].name)
+        self.assertEqual(role_fields[0].value, f"{spec['emoji']} Рейдер")
 
 
 if __name__ == "__main__":
