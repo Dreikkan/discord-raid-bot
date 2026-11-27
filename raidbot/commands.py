@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from .constants import ROLE_LABELS, ROLE_ORDER
 from .date_picker import RaidDatePickerView
+from .gacha_panel import GachaPanelView
 from .settings_panel import SettingsView
 from .time_utils import TimeInputError, parse_time_value
 
@@ -116,6 +117,26 @@ class RaidCog(commands.Cog):
             return
 
         view = SettingsView(self.bot, interaction.guild.id)
+        await interaction.response.send_message(
+            embed=view.build_embed(), view=view, ephemeral=True
+        )
+        view.message = await interaction.original_response()
+
+    @app_commands.command(
+        name="гача",
+        description="Открыть гачу и получить коллекционную награду",
+    )
+    @app_commands.guild_only()
+    async def gacha(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "Команду нужно использовать на сервере.", ephemeral=True
+            )
+            return
+
+        view = GachaPanelView(
+            self.bot, interaction.guild.id, interaction.user.id
+        )
         await interaction.response.send_message(
             embed=view.build_embed(), view=view, ephemeral=True
         )

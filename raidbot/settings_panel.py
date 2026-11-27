@@ -90,7 +90,7 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
     embed = discord.Embed(
         title="Настройки",
         description=(
-            "Настройки рейда и напоминаний об активностях.\n"
+            "Настройки рейда, напоминаний об активностях и пула гачи.\n"
             "Изменения сохраняются автоматически."
         ),
         color=PANEL_COLOR,
@@ -101,6 +101,20 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
             f"**Название:** {settings.get('title') or '—'}\n"
             f"**Лимиты:** {' · '.join(limit_parts)}\n"
             f"**Часовой пояс:** {settings.get('timezone') or '—'}"
+        ),
+        inline=False,
+    )
+
+    gacha_items = settings.get("gacha_items", [])
+    legendary_count = sum(
+        1 for item in gacha_items if item.get("rarity") == "legendary"
+    )
+    embed.add_field(
+        name="Гача",
+        value=(
+            f"**Предметов в пуле:** {len(gacha_items)}\n"
+            f"**Легендарных:** {legendary_count}\n"
+            "Пул и картинки настраиваются кнопкой ниже."
         ),
         inline=False,
     )
@@ -121,7 +135,10 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
         )
 
     embed.set_footer(
-        text="Выберите активность ниже или нажмите «Добавить активность»."
+        text=(
+            "Выберите активность, откройте настройки рейда "
+            "или предметы гачи."
+        )
     )
     return embed
 
@@ -194,6 +211,9 @@ class PanelView(discord.ui.View):
     def build_embed(self) -> discord.Embed:
         raise NotImplementedError
 
+    def build_files(self) -> list[discord.File]:
+        return []
+
     async def on_timeout(self) -> None:
         if self.message is None:
             return
@@ -209,15 +229,23 @@ class PanelView(discord.ui.View):
     ) -> None:
         self.stop()
         embed = new_view.build_embed()
+        files = new_view.build_files()
 
         if interaction.message is not None:
             new_view.message = interaction.message
-            await interaction.response.edit_message(embed=embed, view=new_view)
+            await interaction.response.edit_message(
+                embed=embed, view=new_view, attachments=files
+            )
             return
 
-        await interaction.response.send_message(
-            embed=embed, view=new_view, ephemeral=True
-        )
+        if files:
+            await interaction.response.send_message(
+                embed=embed, view=new_view, files=files, ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                embed=embed, view=new_view, ephemeral=True
+            )
         new_view.message = await interaction.original_response()
 
 
@@ -268,6 +296,15 @@ class SettingsView(PanelView):
         add_button.callback = self._open_add_activity  # type: ignore[method-assign]
         self.add_item(add_button)
 
+        gacha_button = discord.ui.Button(
+            label="Предметы гачи",
+            emoji="🎁",
+            style=discord.ButtonStyle.secondary,
+            row=button_row,
+        )
+        gacha_button.callback = self._open_gacha_pool  # type: ignore[method-assign]
+        self.add_item(gacha_button)
+
     def build_embed(self) -> discord.Embed:
         return build_settings_embed(self.settings())
 
@@ -298,6 +335,13 @@ class SettingsView(PanelView):
     async def _open_add_activity(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(
             AddActivityModal(self.bot, self.guild_id, self)
+        )
+
+    async def _open_gacha_pool(self, interaction: discord.Interaction) -> None:
+        from .gacha_settings import GachaPoolView
+
+        await self.show_view(
+            interaction, GachaPoolView(self.bot, self.guild_id)
         )
 
 

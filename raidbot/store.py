@@ -20,9 +20,10 @@ from .constants import (
     STATUS_BENCH,
     STATUS_MAIN,
 )
+from .gacha import GachaError, gacha_item_defaults, normalize_item, normalize_items
 
-_STORE_VERSION = 1
-_SETTINGS_VERSION = 2
+_STORE_VERSION = 2
+_SETTINGS_VERSION = 3
 
 
 def default_settings() -> dict[str, Any]:
@@ -34,6 +35,7 @@ def default_settings() -> dict[str, Any]:
         "timezone": DEFAULT_TIMEZONE,
         "specs": bundled_catalog(),
         "activities": activity_defaults(),
+        "gacha_items": gacha_item_defaults(),
     }
 
 
@@ -42,6 +44,8 @@ def _empty_store() -> dict[str, Any]:
         "version": _STORE_VERSION,
         "guilds": {},
         "raids": {},
+        "profiles": {},
+        "activity_events": {},
         "scheduled_deletions": [],
     }
 
@@ -76,10 +80,14 @@ class Store:
         data.setdefault("version", _STORE_VERSION)
         data.setdefault("guilds", {})
         data.setdefault("raids", {})
+        data.setdefault("profiles", {})
+        data.setdefault("activity_events", {})
         data.setdefault("scheduled_deletions", [])
         if (
             not isinstance(data["guilds"], dict)
             or not isinstance(data["raids"], dict)
+            or not isinstance(data["profiles"], dict)
+            or not isinstance(data["activity_events"], dict)
             or not isinstance(data["scheduled_deletions"], list)
         ):
             raise RuntimeError(f"Файл данных {self.path} имеет неверный формат.")
@@ -160,6 +168,12 @@ class Store:
         settings["activities"] = Store._normalize_activities(
             raw.get("activities")
         )
+
+        raw_gacha_items = raw.get("gacha_items")
+        if isinstance(raw_gacha_items, list):
+            settings["gacha_items"] = normalize_items(raw_gacha_items)
+        else:
+            settings["gacha_items"] = gacha_item_defaults()
         return settings
 
     def settings_for(self, guild_id: str | int) -> dict[str, Any]:
@@ -226,6 +240,283 @@ class Store:
                 activity["last_sent_event_at"] = int(event_at)
                 self._save()
                 return
+
+    # ----------------------------------------------------- Gacha settings
+
+    def find_gacha_item(
+        self, guild_id: str | int, item_id: str
+    ) -> dict[str, Any] | None:
+        for item in self.settings_for(guild_id).get("gacha_items", []):
+            if str(item.get("id")) == str(item_id):
+                return item
+        return None
+
+    def save_gacha_item(
+        self, guild_id: str | int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        normalized = normalize_item(item)
+        settings = self.settings_for(guild_id)
+        items = settings.setdefault("gacha_items", [])
+
+        for index, existing in enumerate(items):
+            if str(existing.get("id")) == normalized["id"]:
+                for other in items:
+                    if (
+                        str(other.get("id")) != normalized["id"]
+                        and str(other.get("name", "")).casefold()
+                        == normalized["name"].casefold()
+                    ):
+                        raise GachaError(
+                            "Предмет с таким названием уже есть в пуле."
+                        )
+                items[index] = normalized
+                self._save()
+                return normalized
+
+        for existing in items:
+            if (
+                str(existing.get("name", "")).casefold()
+                == normalized["name"].casefold()
+            ):
+                raise GachaError("Предмет с таким названием уже есть в пуле.")
+
+        items.append(normalized)
+        self._save()
+        return normalized
+
+    def delete_gacha_item(self, guild_id: str | int, item_id: str) -> bool:
+        settings = self.settings_for(guild_id)
+        items = settings.get("gacha_items", [])
+        for index, item in enumerate(items):
+            if str(item.get("id")) == str(item_id):
+                items.pop(index)
+                self._save()
+                return True
+        return False
+
+    # ------------------------------------------------------------ Profiles
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _ensure_profile(
+        self, guild_id: str | int, user_id: str | int
+    ) -> tuple[dict[str, Any], bool]:
+        profiles = self.data.setdefault("profiles", {})
+        guild_profiles = profiles.setdefault(str(guild_id), {})
+        key = str(user_id)
+        raw = guild_profiles.get(key)
+        now = int(time.time())
+        if not isinstance(raw, dict):
+            raw = {}
+
+        inventory: dict[str, int] = {}
+        raw_inventory = raw.get("inventory")
+        if isinstance(raw_inventory, dict):
+            for item_id, count in raw_inventory.items():
+                amount = self._safe_int(count, 0)
+                if item_id and amount > 0:
+                    inventory[str(item_id)] = amount
+
+        profile = {
+            "balance": max(0, self._safe_int(raw.get("balance"), 0)),
+            "inventory": inventory,
+            "pity": max(0, self._safe_int(raw.get("pity"), 0)),
+            "total_pulls": max(
+                0, self._safe_int(raw.get("total_pulls"), 0)
+            ),
+            "created_at": max(0, self._safe_int(raw.get("created_at"), now)),
+            "updated_at": max(0, self._safe_int(raw.get("updated_at"), now)),
+        }
+        if isinstance(raw, dict) and profile == raw:
+            return raw, False
+        guild_profiles[key] = profile
+        return profile, True
+
+    def profile_for(
+        self, guild_id: str | int, user_id: str | int
+    ) -> dict[str, Any]:
+        profile, changed = self._ensure_profile(guild_id, user_id)
+        if changed:
+            self._save()
+        return profile
+
+    def add_currency(
+        self, guild_id: str | int, user_id: str | int, amount: int
+    ) -> dict[str, Any]:
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        profile["balance"] = max(0, profile["balance"] + int(amount))
+        profile["updated_at"] = int(time.time())
+        self._save()
+        return profile
+
+    def complete_gacha_pull(
+        self,
+        guild_id: str | int,
+        user_id: str | int,
+        *,
+        cost: int,
+        item_ids: list[str],
+        pity: int,
+    ) -> dict[str, Any]:
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        cost = int(cost)
+        if cost < 0:
+            raise ValueError("Стоимость крутки не может быть отрицательной.")
+        if profile["balance"] < cost:
+            raise ValueError("Недостаточно валюты для крутки.")
+        if not item_ids:
+            raise ValueError("Нет наград для сохранения.")
+
+        counts: dict[str, int] = {}
+        for item_id in item_ids:
+            key = str(item_id)
+            counts[key] = counts.get(key, 0) + 1
+
+        profile["balance"] -= cost
+        for item_id, count in counts.items():
+            profile["inventory"][item_id] = (
+                profile["inventory"].get(item_id, 0) + count
+            )
+        profile["pity"] = max(0, int(pity))
+        profile["total_pulls"] += len(item_ids)
+        profile["updated_at"] = int(time.time())
+        self._save()
+        return profile
+
+    # ---------------------------------------------------- Activity rewards
+
+    def register_activity_event(
+        self,
+        message_id: str | int,
+        *,
+        guild_id: str | int,
+        activity_id: str,
+        start_at: int,
+        end_at: int,
+    ) -> None:
+        events = self.data.setdefault("activity_events", {})
+        key = str(message_id)
+        existing = events.get(key)
+        checkins = (
+            list(existing.get("checkins", []))
+            if isinstance(existing, dict)
+            else []
+        )
+        events[key] = {
+            "guild_id": str(guild_id),
+            "activity_id": str(activity_id),
+            "start_at": int(start_at),
+            "end_at": int(end_at),
+            "checkins": checkins,
+            "created_at": int(time.time()),
+        }
+        self._save()
+
+    def activity_event(self, message_id: str | int) -> dict[str, Any] | None:
+        event = self.data.get("activity_events", {}).get(str(message_id))
+        return event if isinstance(event, dict) else None
+
+    def claim_activity_reward(
+        self,
+        message_id: str | int,
+        user_id: str | int,
+        *,
+        amount: int,
+        now: int | None = None,
+    ) -> tuple[str, int, int]:
+        event = self.activity_event(message_id)
+        if event is None:
+            return "missing", 0, 0
+
+        timestamp = int(now) if now is not None else int(time.time())
+        profile, _ = self._ensure_profile(
+            event.get("guild_id", 0), user_id
+        )
+
+        if timestamp > int(event.get("end_at", 0)):
+            return "ended", 0, profile["balance"]
+
+        checkins = event.setdefault("checkins", [])
+        if not isinstance(checkins, list):
+            checkins = []
+            event["checkins"] = checkins
+        user_key = str(user_id)
+        if user_key in checkins:
+            return "already", 0, profile["balance"]
+
+        checkins.append(user_key)
+        profile["balance"] = max(0, profile["balance"] + int(amount))
+        profile["updated_at"] = timestamp
+        self._save()
+        return "ok", int(amount), profile["balance"]
+
+    def prune_activity_events(self, cutoff: int) -> int:
+        events = self.data.get("activity_events", {})
+        expired = [
+            key
+            for key, event in events.items()
+            if int(event.get("end_at", 0)) < int(cutoff)
+        ]
+        for key in expired:
+            events.pop(key, None)
+        if expired:
+            self._save()
+        return len(expired)
+
+    # --------------------------------------------------------- Raid rewards
+
+    def award_raid_rewards(
+        self,
+        raid_id: str,
+        *,
+        main_amount: int,
+        bench_amount: int,
+        now: int | None = None,
+    ) -> list[dict[str, Any]]:
+        raid = self.data["raids"].get(raid_id)
+        if raid is None:
+            return []
+
+        # Raids created before the economy update do not have this field.
+        # Mark them as processed so old raids are not rewarded retroactively.
+        if "rewards_awarded_at" not in raid:
+            raid["rewards_awarded_at"] = (
+                int(now) if now is not None else int(time.time())
+            )
+            self._save()
+            return []
+
+        if raid.get("rewards_awarded_at") is not None:
+            return []
+
+        timestamp = int(now) if now is not None else int(time.time())
+        awards: list[dict[str, Any]] = []
+        for user_id, registration in raid.get("registrations", {}).items():
+            status = registration.get("status")
+            amount = (
+                int(main_amount)
+                if status == STATUS_MAIN
+                else int(bench_amount)
+                if status == STATUS_BENCH
+                else 0
+            )
+            if amount <= 0:
+                continue
+            profile, _ = self._ensure_profile(raid["guild_id"], user_id)
+            profile["balance"] = max(0, profile["balance"] + amount)
+            profile["updated_at"] = timestamp
+            awards.append(
+                {"user_id": str(user_id), "amount": amount, "status": status}
+            )
+
+        raid["rewards_awarded_at"] = timestamp
+        self._save()
+        return awards
 
     # ------------------------------------------------------- Auto-deletions
 
@@ -300,6 +591,7 @@ class Store:
             "registrations": {},
             "created_at": now,
             "notification_sent_at": None,
+            "rewards_awarded_at": None,
         }
         self.data["raids"][raid_id] = raid
         self._save()

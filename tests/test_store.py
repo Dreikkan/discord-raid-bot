@@ -117,7 +117,7 @@ class StoreTests(unittest.TestCase):
         reloaded = Store(self.path)
         settings = reloaded.settings_for(123)
         self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
-        self.assertEqual(settings["settings_version"], 2)
+        self.assertEqual(settings["settings_version"], 3)
         self.assertEqual(settings["title"], "Старый рейд")
 
     def test_raid_and_registration_round_trip(self) -> None:

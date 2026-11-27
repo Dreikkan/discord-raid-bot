@@ -9,13 +9,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
+import discord
+
 from raidbot.constants import (
+    ACTIVITY_REWARD,
     RAID_ROLE_MENTION_ID,
     STATUS_ABSENT,
     STATUS_BENCH,
     STATUS_MAIN,
 )
-from raidbot.reminders import ReminderService
+from raidbot.reminders import ActivityCheckinView, ReminderService
 from raidbot.store import Store
 
 
@@ -192,6 +195,105 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         saved = self.store.get_raid(raid["id"])
         assert saved is not None
         self.assertIsNotNone(saved["notification_sent_at"])
+
+    async def test_activity_reminder_registers_checkin_event(self) -> None:
+        now = int(time.time())
+        timezone = "Europe/Moscow"
+        start = (datetime.now(ZoneInfo(timezone)) + timedelta(minutes=5)).strftime(
+            "%H:%M"
+        )
+        settings = self.store.settings_for(1)
+        activity = next(
+            item
+            for item in settings["activities"]
+            if item["name"] == "Вечеринка"
+        )
+        activity["channel_id"] = 123
+        activity["role_id"] = RAID_ROLE_MENTION_ID
+        activity["schedules"] = [
+            {"weekday": None, "start": start, "end": "00:00"}
+        ]
+        self.store.save_activity(1, activity)
+
+        channel = FakeChannel()
+        service = ReminderService(FakeBot(channel, self.store))
+        await service.check_activity_reminders(now)
+
+        event = self.store.activity_event(555)
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event["guild_id"], "1")
+        self.assertEqual(event["activity_id"], activity["id"])
+        view = channel.send.await_args.kwargs.get("view")
+        self.assertIsInstance(view, ActivityCheckinView)
+
+    async def test_checkin_button_awards_currency_once(self) -> None:
+        now = int(time.time())
+        self.store.register_activity_event(
+            555,
+            guild_id=1,
+            activity_id="party",
+            start_at=now - 60,
+            end_at=now + 3600,
+        )
+        view = ActivityCheckinView(FakeBot(FakeChannel(), self.store))
+        button = next(
+            item
+            for item in view.children
+            if isinstance(item, discord.ui.Button)
+        )
+        response = SimpleNamespace(send_message=AsyncMock())
+        interaction = SimpleNamespace(
+            message=SimpleNamespace(id=555),
+            user=SimpleNamespace(id=42),
+            response=response,
+        )
+
+        await button.callback(interaction)
+
+        self.assertEqual(self.store.profile_for(1, 42)["balance"], ACTIVITY_REWARD)
+        embed = response.send_message.await_args.kwargs["embed"]
+        self.assertIn("Награда получена", embed.title)
+        self.assertIn(f"+{ACTIVITY_REWARD}", embed.description)
+
+        second_response = SimpleNamespace(send_message=AsyncMock())
+        second_interaction = SimpleNamespace(
+            message=SimpleNamespace(id=555),
+            user=SimpleNamespace(id=42),
+            response=second_response,
+        )
+        await button.callback(second_interaction)
+        second_embed = second_response.send_message.await_args.kwargs["embed"]
+        self.assertIn("уже получена", second_embed.title)
+        self.assertEqual(self.store.profile_for(1, 42)["balance"], ACTIVITY_REWARD)
+
+    async def test_raid_rewards_are_awarded_at_start_once(self) -> None:
+        now = int(time.time())
+        raid = self.store.create_raid(
+            guild_id=1,
+            channel_id=123,
+            created_by=2,
+            title="Рейд",
+            description="",
+            start_at=now - 1,
+            limits={"tank": 1, "heal": 2, "dd": 7},
+            role_emojis={"tank": "1", "heal": "2", "dd": "3"},
+        )
+        self.store.set_registration(
+            raid["id"],
+            10,
+            role="tank",
+            specializations=[],
+            display_name="Танк",
+            status=STATUS_MAIN,
+        )
+        service = ReminderService(FakeBot(FakeChannel(), self.store))
+
+        service.check_raid_rewards(now)
+        self.assertEqual(self.store.profile_for(1, 10)["balance"], 50)
+
+        service.check_raid_rewards(now + 1)
+        self.assertEqual(self.store.profile_for(1, 10)["balance"], 50)
 
 
 if __name__ == "__main__":

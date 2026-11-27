@@ -12,6 +12,12 @@ from .activities import (
     next_activity_occurrence,
 )
 from .constants import (
+    ACTIVITY_CHECKIN_CUSTOM_ID,
+    ACTIVITY_REWARD,
+    CURRENCY_EMOJI,
+    CURRENCY_NAME,
+    RAID_REWARD_BENCH,
+    RAID_REWARD_MAIN,
     REMINDER_LOOP_SECONDS,
     REMINDER_MINUTES,
     REMINDER_RETRY_SECONDS,
@@ -64,7 +70,9 @@ class ReminderService:
     async def check_due_reminders(self) -> None:
         now = int(time.time())
         await self._cleanup_expired_messages(now)
+        self.bot.store.prune_activity_events(now - 24 * 60 * 60)
         await self.check_activity_reminders(now)
+        self.check_raid_rewards(now)
 
         threshold = REMINDER_MINUTES * 60
 
@@ -87,6 +95,23 @@ class ReminderService:
             if await self._send_raid_reminder(raid):
                 self.bot.store.mark_notification_sent(raid_id, now)
                 self._last_attempt.pop(raid_id, None)
+
+    def check_raid_rewards(self, now: int) -> None:
+        for raid in self.bot.store.all_raids():
+            if int(raid.get("start_at", 0)) > now:
+                continue
+            awards = self.bot.store.award_raid_rewards(
+                str(raid["id"]),
+                main_amount=RAID_REWARD_MAIN,
+                bench_amount=RAID_REWARD_BENCH,
+                now=now,
+            )
+            if awards:
+                log.info(
+                    "Награды за рейд %s начислены %s участникам",
+                    raid.get("id"),
+                    len(awards),
+                )
 
     # ----------------------------------------------------------- Activities
 
@@ -176,6 +201,8 @@ class ReminderService:
                 f"⏰ **{name}** — через 15 минут",
                 f"Начало: <t:{start_at}:t> (<t:{start_at}:R>)",
                 f"Окончание: {end_text}",
+                f"✅ Отметьтесь кнопкой ниже: +{ACTIVITY_REWARD} "
+                f"{CURRENCY_EMOJI} {CURRENCY_NAME}",
             )
         )
 
@@ -187,15 +214,31 @@ class ReminderService:
         delete_at = int(time.time()) + delete_after
 
         try:
-            for chunk in self._split_content(content):
+            chunks = self._split_content(content)
+            for index, chunk in enumerate(chunks):
+                view = (
+                    ActivityCheckinView(self.bot)
+                    if index == len(chunks) - 1
+                    else None
+                )
                 message = await channel.send(
-                    chunk, allowed_mentions=allowed_mentions
+                    chunk,
+                    allowed_mentions=allowed_mentions,
+                    view=view,
                 )
                 self.bot.store.schedule_message_deletion(
                     channel_id=channel.id,
                     message_id=message.id,
                     delete_at=delete_at,
                 )
+                if view is not None:
+                    self.bot.store.register_activity_event(
+                        message.id,
+                        guild_id=guild_id,
+                        activity_id=str(activity["id"]),
+                        start_at=start_at,
+                        end_at=end_at,
+                    )
         except (discord.DiscordException, ValueError, TypeError):
             log.exception(
                 "Не удалось отправить напоминание активности %s",
@@ -245,7 +288,9 @@ class ReminderService:
         content = (
             f"{header}\n\n"
             f"**Участники:** {main_text}\n"
-            f"**Скамья запасных:** {bench_text}"
+            f"**Скамья запасных:** {bench_text}\n\n"
+            f"🎁 После начала: +{RAID_REWARD_MAIN} основному составу, "
+            f"+{RAID_REWARD_BENCH} скамье"
         )
 
         allowed_mentions = discord.AllowedMentions(
@@ -338,3 +383,73 @@ class ReminderService:
                 continue
             except (discord.DiscordException, KeyError, ValueError, TypeError):
                 log.exception("Не удалось удалить сообщение напоминания")
+
+
+def _format_amount(value: int) -> str:
+    return f"{int(value):,}".replace(",", " ")
+
+
+class ActivityCheckinView(discord.ui.View):
+    """Persistent check-in button under an activity reminder."""
+
+    def __init__(self, bot: Any) -> None:
+        super().__init__(timeout=None)
+        self.bot = bot
+        button = discord.ui.Button(
+            label="Я участвую",
+            emoji="✅",
+            style=discord.ButtonStyle.success,
+            custom_id=ACTIVITY_CHECKIN_CUSTOM_ID,
+        )
+        button.callback = self._check_in  # type: ignore[method-assign]
+        self.add_item(button)
+
+    async def _check_in(self, interaction: discord.Interaction) -> None:
+        if interaction.message is None:
+            await interaction.response.send_message(
+                "Не удалось найти сообщение активности.", ephemeral=True
+            )
+            return
+
+        status, amount, balance = self.bot.store.claim_activity_reward(
+            interaction.message.id,
+            interaction.user.id,
+            amount=ACTIVITY_REWARD,
+        )
+        if status == "missing":
+            embed = discord.Embed(
+                title="Событие не найдено",
+                description=(
+                    "Не удалось найти это событие. Возможно, напоминание "
+                    "уже устарело."
+                ),
+                color=discord.Color.red(),
+            )
+        elif status == "ended":
+            embed = discord.Embed(
+                title="Активность завершилась",
+                description="Награда за эту активность больше недоступна.",
+                color=discord.Color.red(),
+            )
+        elif status == "already":
+            embed = discord.Embed(
+                title="Награда уже получена",
+                description=(
+                    "Вы уже отметились на этой активности.\n\n"
+                    f"**Баланс:** {CURRENCY_EMOJI} "
+                    f"{_format_amount(balance)} {CURRENCY_NAME}"
+                ),
+                color=discord.Color.orange(),
+            )
+        else:
+            embed = discord.Embed(
+                title="✅ Награда получена",
+                description=(
+                    f"**+{amount}** {CURRENCY_EMOJI} {CURRENCY_NAME}\n\n"
+                    f"**Баланс:** {CURRENCY_EMOJI} "
+                    f"{_format_amount(balance)} {CURRENCY_NAME}"
+                ),
+                color=discord.Color.green(),
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)

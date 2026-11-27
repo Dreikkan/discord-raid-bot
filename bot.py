@@ -10,7 +10,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from raidbot.commands import RaidCog
-from raidbot.reminders import ReminderService
+from raidbot.reminders import ActivityCheckinView, ReminderService
 from raidbot.store import Store
 from raidbot.views import RaidPanelView
 
@@ -43,6 +43,7 @@ class RaidBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await self.add_cog(RaidCog(self))
+        self.add_view(ActivityCheckinView(self))
 
         for raid in self.store.all_raids():
             view = RaidPanelView(self, raid["id"])
