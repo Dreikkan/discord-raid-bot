@@ -12,6 +12,7 @@ from .activities import (
     next_activity_occurrence,
     parse_schedules,
 )
+from .gacha_roles import role_rewards
 from .constants import (
     MAX_REMINDER_DELETE_MINUTES,
     MAX_REMINDER_DESCRIPTION_LENGTH,
@@ -118,6 +119,20 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
         ),
         inline=False,
     )
+
+    rewards = role_rewards()
+    if rewards:
+        embed.add_field(
+            name="Гарантированные роли",
+            value=(
+                "\n".join(
+                    f"**{reward['name']}** — {reward['milestone']} круток"
+                    for reward in rewards
+                )
+                + "\nРоли выдаются автоматически при достижении порога."
+            ),
+            inline=False,
+        )
 
     activities = settings.get("activities", [])
     for activity in activities:

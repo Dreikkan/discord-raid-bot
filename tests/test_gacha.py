@@ -27,6 +27,13 @@ from raidbot.gacha_panel import (
     build_legendary_announcement_content,
     build_legendary_announcement_embed,
 )
+from raidbot.gacha_roles import (
+    build_role_reward_embed,
+    claim_role_rewards,
+    pending_role_rewards,
+    role_reward_image_path,
+    role_rewards,
+)
 from raidbot.gacha_settings import (
     GachaItemImageSourceView,
     GachaItemImageUploadModal,
@@ -47,7 +54,7 @@ class FakeBot:
 class GachaItemTests(unittest.TestCase):
     def test_default_pool_contains_legendary_core_with_image(self) -> None:
         items = gacha_item_defaults()
-        self.assertEqual(len(items), 34)
+        self.assertEqual(len(items), 35)
         core = next(item for item in items if item["id"] == "core-of-harmony")
         self.assertEqual(core["name"], "Ядро гармонии")
         self.assertEqual(core["rarity"], "legendary")
@@ -170,8 +177,19 @@ class GachaStoreTests(unittest.TestCase):
         self.assertNotIn("smoldering-coal", ids)
         self.assertIn("custom-item", ids)
         self.assertIn("core-of-harmony", ids)
-        self.assertEqual(len(settings["gacha_items"]), 35)
-        self.assertEqual(settings["gacha_pool_version"], 2)
+        self.assertEqual(len(settings["gacha_items"]), 36)
+        self.assertEqual(settings["gacha_pool_version"], 3)
+
+    def test_role_reward_marks_are_idempotent(self) -> None:
+        self.store.mark_role_reward(1, 10, "ludik")
+        self.store.mark_role_reward(1, 10, "ludik")
+        profile = self.store.profile_for(1, 10)
+        self.assertEqual(profile["role_rewards"], ["ludik"])
+
+        reloaded = Store(self.path)
+        self.assertEqual(
+            reloaded.profile_for(1, 10)["role_rewards"], ["ludik"]
+        )
 
     def test_gacha_items_can_be_added_edited_and_deleted(self) -> None:
         saved = self.store.save_gacha_item(
@@ -321,6 +339,106 @@ class GachaStoreTests(unittest.TestCase):
         self.assertEqual(self.store.profile_for(1, 10)["balance"], 0)
 
 
+class RoleRewardTests(unittest.TestCase):
+    def test_role_reward_definitions(self) -> None:
+        rewards = role_rewards()
+        self.assertEqual(
+            [reward["milestone"] for reward in rewards],
+            [50, 80, 150],
+        )
+        self.assertEqual(
+            [reward["name"] for reward in rewards],
+            ["Лудик", "Гигача", "Лудик король"],
+        )
+        for reward in rewards:
+            self.assertIsNotNone(role_reward_image_path(reward))
+
+    def test_pending_role_rewards_follow_total_pulls(self) -> None:
+        def pending(total: int, claimed: list[str] | None = None):
+            return [
+                reward["id"]
+                for reward in pending_role_rewards(
+                    {
+                        "total_pulls": total,
+                        "role_rewards": claimed or [],
+                    }
+                )
+            ]
+
+        self.assertEqual(pending(49), [])
+        self.assertEqual(pending(50), ["ludik"])
+        self.assertEqual(pending(80), ["ludik", "gigacha"])
+        self.assertEqual(
+            pending(150), ["ludik", "gigacha", "ludik-korol"]
+        )
+        self.assertEqual(pending(80, ["ludik"]), ["gigacha"])
+
+    def test_role_reward_embed_has_role_and_icon(self) -> None:
+        reward = role_rewards()[0]
+        role = SimpleNamespace(mention="<@&100>")
+        member = SimpleNamespace(mention="<@10>")
+        embed = build_role_reward_embed(reward, role, member)
+        self.assertIn("Лудик", embed.title)
+        self.assertIn("<@&100>", embed.description)
+        self.assertEqual(embed.image.url, "attachment://ludik.png")
+
+
+class FakeRole:
+    def __init__(
+        self,
+        role_id: int,
+        name: str,
+        position: int = 5,
+    ) -> None:
+        self.id = role_id
+        self.name = name
+        self.mention = f"<@&{role_id}>"
+        self.position = position
+        self.managed = False
+
+    def is_default(self) -> bool:
+        return False
+
+
+class RoleRewardGrantTests(unittest.IsolatedAsyncioTestCase):
+    async def test_claim_assigns_role_and_marks_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            role = FakeRole(100, "Лудик")
+            member = SimpleNamespace(
+                id=10,
+                mention="<@10>",
+                roles=[],
+                add_roles=AsyncMock(),
+            )
+            guild = SimpleNamespace(
+                id=1,
+                roles=[role],
+                get_member=lambda user_id: member,
+                me=SimpleNamespace(
+                    guild_permissions=SimpleNamespace(manage_roles=True),
+                    top_role=SimpleNamespace(position=10),
+                ),
+                create_role=AsyncMock(),
+            )
+            profile = store.profile_for(1, 10)
+            profile["total_pulls"] = 50
+            store.save()
+
+            grants, errors = await claim_role_rewards(
+                bot, guild, 10, profile
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(len(grants), 1)
+            self.assertEqual(grants[0].reward["id"], "ludik")
+            member.add_roles.assert_awaited_once()
+            self.assertEqual(
+                store.profile_for(1, 10)["role_rewards"], ["ludik"]
+            )
+
+
 class GachaEmbedTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -340,6 +458,14 @@ class GachaEmbedTests(unittest.TestCase):
         self.assertIn("Гача гармонии", embed.title)
         self.assertIn("Осколки гармонии", embed.description)
         self.assertIn("До гарантии", embed.description)
+        role_field = next(
+            field
+            for field in embed.fields
+            if "Гарантированные роли" in field.name
+        )
+        self.assertIn("Лудик", role_field.value)
+        self.assertIn("Гигача", role_field.value)
+        self.assertIn("Лудик король", role_field.value)
         labels = [
             item.label for item in panel.children if hasattr(item, "label")
         ]

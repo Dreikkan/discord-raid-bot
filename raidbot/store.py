@@ -365,6 +365,14 @@ class Store:
                 if item_id and amount > 0:
                     inventory[str(item_id)] = amount
 
+        role_rewards: list[str] = []
+        raw_role_rewards = raw.get("role_rewards")
+        if isinstance(raw_role_rewards, list):
+            for reward_id in raw_role_rewards:
+                value = str(reward_id).strip()
+                if value and value not in role_rewards:
+                    role_rewards.append(value)
+
         profile = {
             "balance": max(0, self._safe_int(raw.get("balance"), 0)),
             "inventory": inventory,
@@ -372,6 +380,7 @@ class Store:
             "total_pulls": max(
                 0, self._safe_int(raw.get("total_pulls"), 0)
             ),
+            "role_rewards": role_rewards,
             "created_at": max(0, self._safe_int(raw.get("created_at"), now)),
             "updated_at": max(0, self._safe_int(raw.get("updated_at"), now)),
         }
@@ -395,6 +404,20 @@ class Store:
         profile["balance"] = max(0, profile["balance"] + int(amount))
         profile["updated_at"] = int(time.time())
         self._save()
+        return profile
+
+    def mark_role_reward(
+        self,
+        guild_id: str | int,
+        user_id: str | int,
+        reward_id: str,
+    ) -> dict[str, Any]:
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        reward_id = str(reward_id)
+        if reward_id not in profile["role_rewards"]:
+            profile["role_rewards"].append(reward_id)
+            profile["updated_at"] = int(time.time())
+            self._save()
         return profile
 
     def complete_gacha_pull(

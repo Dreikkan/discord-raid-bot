@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "items": [
     {
       "id": "core-of-harmony",
@@ -251,6 +251,15 @@
       "weight": 100,
       "description": "",
       "image": "khogo.png",
+      "announce": false
+    },
+    {
+      "id": "ruda-garmonii",
+      "name": "Руда гармонии",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "ruda-garmonii.png",
       "announce": false
     },
     {

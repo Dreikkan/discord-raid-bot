@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "rewards": [
+    {
+      "id": "ludik",
+      "name": "Лудик",
+      "milestone": 50,
+      "image": "ludik.png",
+      "color": 16733905,
+      "description": "Гарантированная роль за 50 круток."
+    },
+    {
+      "id": "gigacha",
+      "name": "Гигача",
+      "milestone": 80,
+      "image": "gigacha.png",
+      "color": 2259956,
+      "description": "Гарантированная роль за 80 круток."
+    },
+    {
+      "id": "ludik-korol",
+      "name": "Лудик король",
+      "milestone": 150,
+      "image": "ludik-korol.png",
+      "color": 12631587,
+      "description": "Гарантированная роль за 150 круток."
+    }
+  ]
+}

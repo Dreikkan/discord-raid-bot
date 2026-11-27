@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GACHA_ITEMS_PATH = PROJECT_ROOT / "config" / "gacha_items.json"
 GACHA_ASSETS_DIR = PROJECT_ROOT / "assets" / "gacha"
-GACHA_POOL_VERSION = 2
+GACHA_POOL_VERSION = 3
 
 LEGACY_PLACEHOLDER_IDS: frozenset[str] = frozenset(
     {

@@ -10,6 +10,7 @@ from discord.ext import commands
 from .constants import ROLE_LABELS, ROLE_ORDER
 from .date_picker import RaidDatePickerView
 from .gacha_panel import GachaPanelView
+from .gacha_roles import claim_role_rewards, send_role_reward_notices
 from .settings_panel import SettingsView
 from .time_utils import TimeInputError, parse_time_value
 
@@ -141,6 +142,22 @@ class RaidCog(commands.Cog):
             embed=view.build_embed(), view=view, ephemeral=True
         )
         view.message = await interaction.original_response()
+
+        profile = self.bot.store.profile_for(
+            interaction.guild.id, interaction.user.id
+        )
+        grants, errors = await claim_role_rewards(
+            self.bot,
+            interaction.guild,
+            interaction.user.id,
+            profile,
+        )
+        if grants or errors:
+            try:
+                await view.message.edit(embed=view.build_embed())
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+            await send_role_reward_notices(interaction, grants, errors)
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -26,6 +26,12 @@ from .gacha import (
     rarity_summary,
     roll_gacha,
 )
+from .gacha_roles import (
+    claim_role_rewards,
+    role_reward_status,
+    role_rewards,
+    send_role_reward_notices,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +108,18 @@ def build_gacha_panel_embed(
         embed.add_field(
             name="Пул наград",
             value="Пул пуст. Администратор может добавить предметы в `/настройки`.",
+            inline=False,
+        )
+
+    role_reward_lines = [
+        f"**{reward['name']}** — {reward['milestone']} круток · "
+        f"{role_reward_status(profile, reward)}"
+        for reward in role_rewards()
+    ]
+    if role_reward_lines:
+        embed.add_field(
+            name="🎖️ Гарантированные роли",
+            value="\n".join(role_reward_lines),
             inline=False,
         )
 
@@ -691,6 +709,9 @@ async def perform_gacha_pull(
         )
     view.message = await interaction.original_response()
 
+    grants, errors = await claim_role_rewards(
+        bot, interaction.guild, user_id, updated
+    )
     if interaction.message is not None:
         try:
             await interaction.message.edit(
@@ -700,6 +721,8 @@ async def perform_gacha_pull(
             )
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+    if grants or errors:
+        await send_role_reward_notices(interaction, grants, errors)
 
     # Public announcement for legendary rewards is intentionally separate
     # from the ephemeral result so it does not reveal the user's inventory.
