@@ -138,3 +138,55 @@ def format_timestamp(timestamp: int, style: str = "F") -> str:
     """Discord timestamp markup. Discord renders it in every viewer's timezone."""
 
     return f"<t:{int(timestamp)}:{style}>"
+
+
+def next_weekly_event(
+    weekday: int,
+    time_value: time_type,
+    timezone_text: str,
+    *,
+    after_ts: int,
+) -> int:
+    """Return the next timestamp for a weekday/time after ``after_ts``."""
+
+    if not 0 <= weekday <= 6:
+        raise TimeInputError("День недели должен быть от 0 до 6.")
+
+    _, zone = parse_timezone(timezone_text)
+    reference = datetime.fromtimestamp(after_ts, tz=zone)
+
+    for offset in range(0, 15):
+        candidate = reference.date() + timedelta(days=offset)
+        if candidate.weekday() != weekday:
+            continue
+        try:
+            event_at = combine_date_time(candidate, time_value, timezone_text)
+        except TimeInputError:
+            continue
+        if event_at > after_ts:
+            return event_at
+
+    raise TimeInputError("Не удалось рассчитать следующую дату напоминания.")
+
+
+def next_daily_event(
+    time_value: time_type,
+    timezone_text: str,
+    *,
+    after_ts: int,
+) -> int:
+    """Return the next daily timestamp after ``after_ts``."""
+
+    _, zone = parse_timezone(timezone_text)
+    reference = datetime.fromtimestamp(after_ts, tz=zone)
+
+    for offset in range(0, 3):
+        candidate = reference.date() + timedelta(days=offset)
+        try:
+            event_at = combine_date_time(candidate, time_value, timezone_text)
+        except TimeInputError:
+            continue
+        if event_at > after_ts:
+            return event_at
+
+    raise TimeInputError("Не удалось рассчитать следующую дату напоминания.")

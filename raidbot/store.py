@@ -13,12 +13,15 @@ from .constants import (
     DEFAULT_ROLE_EMOJIS,
     DEFAULT_TIMEZONE,
     DEFAULT_TITLE,
+    MAX_REMINDER_DELETE_MINUTES,
+    MAX_REMINDER_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
     ROLE_ORDER,
     STATUS_ABSENT,
     STATUS_BENCH,
     STATUS_MAIN,
 )
+from .time_utils import TimeInputError, parse_time_value, parse_timezone
 
 _STORE_VERSION = 1
 _SETTINGS_VERSION = 2
@@ -32,11 +35,17 @@ def default_settings() -> dict[str, Any]:
         "role_emojis": dict(DEFAULT_ROLE_EMOJIS),
         "timezone": DEFAULT_TIMEZONE,
         "specs": bundled_catalog(),
+        "reminder": None,
     }
 
 
 def _empty_store() -> dict[str, Any]:
-    return {"version": _STORE_VERSION, "guilds": {}, "raids": {}}
+    return {
+        "version": _STORE_VERSION,
+        "guilds": {},
+        "raids": {},
+        "scheduled_deletions": [],
+    }
 
 
 class Store:
@@ -69,7 +78,12 @@ class Store:
         data.setdefault("version", _STORE_VERSION)
         data.setdefault("guilds", {})
         data.setdefault("raids", {})
-        if not isinstance(data["guilds"], dict) or not isinstance(data["raids"], dict):
+        data.setdefault("scheduled_deletions", [])
+        if (
+            not isinstance(data["guilds"], dict)
+            or not isinstance(data["raids"], dict)
+            or not isinstance(data["scheduled_deletions"], list)
+        ):
             raise RuntimeError(f"Файл данных {self.path} имеет неверный формат.")
         return data
 
@@ -89,6 +103,57 @@ class Store:
         self._save()
 
     # ------------------------------------------------------------- Settings
+
+    @staticmethod
+    def _normalize_reminder(raw: Any) -> dict[str, Any] | None:
+        if not isinstance(raw, dict):
+            return None
+
+        frequency = str(raw.get("frequency", "")).strip()
+        if frequency not in {"daily", "weekly"}:
+            return None
+
+        try:
+            channel_id = int(raw["channel_id"])
+            role_id = int(raw["role_id"])
+            delete_after_minutes = int(raw["delete_after_minutes"])
+            next_event_at = int(raw["next_event_at"])
+            next_fire_at = int(raw["next_fire_at"])
+            time_value = parse_time_value(str(raw.get("time", "")))
+            timezone = parse_timezone(str(raw.get("timezone", "")))[0]
+        except (KeyError, TypeError, ValueError, TimeInputError):
+            return None
+
+        if not 1 <= delete_after_minutes <= MAX_REMINDER_DELETE_MINUTES:
+            return None
+        if next_event_at <= 0 or next_fire_at <= 0:
+            return None
+
+        weekday = None
+        if frequency == "weekly":
+            try:
+                weekday = int(raw["weekday"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not 0 <= weekday <= 6:
+                return None
+
+        description = str(raw.get("description", "")).strip()
+        if len(description) > MAX_REMINDER_DESCRIPTION_LENGTH:
+            description = description[:MAX_REMINDER_DESCRIPTION_LENGTH]
+
+        return {
+            "frequency": frequency,
+            "weekday": weekday,
+            "time": time_value.strftime("%H:%M"),
+            "timezone": timezone,
+            "channel_id": channel_id,
+            "delete_after_minutes": delete_after_minutes,
+            "role_id": role_id,
+            "description": description,
+            "next_event_at": next_event_at,
+            "next_fire_at": next_fire_at,
+        }
 
     @staticmethod
     def _normalize_settings(raw: Any) -> dict[str, Any]:
@@ -119,6 +184,7 @@ class Store:
         if isinstance(timezone, str) and timezone.strip():
             settings["timezone"] = timezone.strip()
 
+        settings["reminder"] = Store._normalize_reminder(raw.get("reminder"))
         return settings
 
     def settings_for(self, guild_id: str | int) -> dict[str, Any]:
@@ -145,6 +211,71 @@ class Store:
         settings = self.settings_for(guild_id)
         settings["timezone"] = timezone
         self._save()
+
+    def set_reminder_config(
+        self, guild_id: str | int, reminder: dict[str, Any]
+    ) -> dict[str, Any]:
+        normalized = self._normalize_reminder(reminder)
+        if normalized is None:
+            raise ValueError("Некорректные настройки напоминания.")
+
+        settings = self.settings_for(guild_id)
+        settings["reminder"] = normalized
+        self._save()
+        return normalized
+
+    def disable_reminder(self, guild_id: str | int) -> None:
+        settings = self.settings_for(guild_id)
+        settings["reminder"] = None
+        self._save()
+
+    def advance_reminder(
+        self,
+        guild_id: str | int,
+        *,
+        next_event_at: int,
+        next_fire_at: int,
+    ) -> None:
+        settings = self.settings_for(guild_id)
+        reminder = settings.get("reminder")
+        if not isinstance(reminder, dict):
+            return
+        reminder["next_event_at"] = int(next_event_at)
+        reminder["next_fire_at"] = int(next_fire_at)
+        self._save()
+
+    # ------------------------------------------------------- Auto-deletions
+
+    def schedule_message_deletion(
+        self,
+        *,
+        channel_id: str | int,
+        message_id: str | int,
+        delete_at: int,
+    ) -> None:
+        deletions = self.data.setdefault("scheduled_deletions", [])
+        deletions.append(
+            {
+                "channel_id": str(channel_id),
+                "message_id": str(message_id),
+                "delete_at": int(delete_at),
+            }
+        )
+        self._save()
+
+    def pop_due_deletions(self, now: int) -> list[dict[str, Any]]:
+        deletions = self.data.get("scheduled_deletions", [])
+        due = [
+            item
+            for item in deletions
+            if int(item.get("delete_at", 0)) <= now
+        ]
+        if due:
+            self.data["scheduled_deletions"] = [
+                item for item in deletions if item not in due
+            ]
+            self._save()
+        return due
 
     def specs_for_role(self, guild_id: str | int, role: str) -> list[dict[str, Any]]:
         return [

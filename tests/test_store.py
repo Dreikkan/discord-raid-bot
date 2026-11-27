@@ -24,6 +24,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
         self.assertEqual(len(settings["specs"]), 12)
         self.assertTrue(all(spec["emoji"].startswith("<:") for spec in settings["specs"]))
+        self.assertIsNone(settings["reminder"])
 
         self.store.set_title(123, "Новый рейд")
         self.store.set_limits(123, {"tank": 1, "heal": 2, "dd": 3})
@@ -35,6 +36,59 @@ class StoreTests(unittest.TestCase):
             reloaded.settings_for(123)["limits"], {"tank": 1, "heal": 2, "dd": 3}
         )
         self.assertEqual(reloaded.settings_for(123)["timezone"], "UTC+03:00")
+
+    def test_reminder_config_persists_and_can_be_disabled(self) -> None:
+        reminder = {
+            "frequency": "weekly",
+            "weekday": 2,
+            "time": "20:30",
+            "timezone": "Europe/Moscow",
+            "channel_id": 10,
+            "delete_after_minutes": 60,
+            "role_id": 20,
+            "description": "Сбор за 15 минут.",
+            "next_event_at": 2_000_000_000,
+            "next_fire_at": 2_000_000_000 - 900,
+        }
+        saved = self.store.set_reminder_config(123, reminder)
+        self.assertEqual(saved["frequency"], "weekly")
+        self.assertEqual(saved["weekday"], 2)
+        self.assertEqual(saved["time"], "20:30")
+
+        reloaded = Store(self.path)
+        restored = reloaded.settings_for(123)["reminder"]
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored["description"], "Сбор за 15 минут.")
+        self.assertEqual(restored["role_id"], 20)
+
+        reloaded.advance_reminder(
+            123, next_event_at=2_000_604_800, next_fire_at=2_000_603_900
+        )
+        self.assertEqual(
+            reloaded.settings_for(123)["reminder"]["next_fire_at"],
+            2_000_603_900,
+        )
+
+        reloaded.disable_reminder(123)
+        self.assertIsNone(Store(self.path).settings_for(123)["reminder"])
+
+    def test_auto_delete_queue_persists_and_returns_due_messages(self) -> None:
+        self.store.schedule_message_deletion(
+            channel_id=10, message_id=20, delete_at=1000
+        )
+        self.store.schedule_message_deletion(
+            channel_id=10, message_id=21, delete_at=5000
+        )
+
+        due = self.store.pop_due_deletions(1500)
+        self.assertEqual([item["message_id"] for item in due], ["20"])
+
+        reloaded = Store(self.path)
+        self.assertEqual(
+            reloaded.data["scheduled_deletions"],
+            [{"channel_id": "10", "message_id": "21", "delete_at": 5000}],
+        )
 
     def test_specializations_are_static_even_if_stored_data_differs(self) -> None:
         settings = self.store.settings_for(123)

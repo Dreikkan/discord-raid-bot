@@ -46,6 +46,18 @@ RAID_ROLE_MENTION_ID = 1482725169884565627
 REMINDER_MINUTES = 15
 REMINDER_LOOP_SECONDS = 20
 REMINDER_RETRY_SECONDS = 5 * 60
+MAX_REMINDER_DELETE_MINUTES = 10080
+MAX_REMINDER_DESCRIPTION_LENGTH = 1500
+
+WEEKDAY_LABELS: tuple[str, ...] = (
+    "Понедельник",
+    "Вторник",
+    "Среда",
+    "Четверг",
+    "Пятница",
+    "Суббота",
+    "Воскресенье",
+)
 
 WIZARD_TIMEOUT_SECONDS = 15 * 60
 MAX_SPECS_PER_ROLE = 25

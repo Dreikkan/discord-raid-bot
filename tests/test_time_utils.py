@@ -7,6 +7,8 @@ from raidbot.time_utils import (
     TimeInputError,
     combine_date_time,
     format_timestamp,
+    next_daily_event,
+    next_weekly_event,
     parse_start_at,
     parse_time_value,
     parse_timezone,
@@ -67,6 +69,28 @@ class TimeUtilsTests(unittest.TestCase):
         )
         with self.assertRaises(TimeInputError):
             parse_time_value("25:00")
+
+    def test_next_weekly_and_daily_events(self) -> None:
+        after = int(datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc).timestamp())
+        weekly = next_weekly_event(
+            0, time(20, 30), "Europe/Moscow", after_ts=after
+        )
+        self.assertEqual(
+            weekly,
+            combine_date_time(
+                date(2026, 11, 30), time(20, 30), "Europe/Moscow"
+            ),
+        )
+
+        daily = next_daily_event(
+            time(20, 30), "Europe/Moscow", after_ts=after
+        )
+        self.assertEqual(
+            daily,
+            combine_date_time(
+                date(2026, 11, 27), time(20, 30), "Europe/Moscow"
+            ),
+        )
 
 
 if __name__ == "__main__":
