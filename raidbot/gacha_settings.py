@@ -32,6 +32,9 @@ log = logging.getLogger(__name__)
 
 GACHA_POOL_PAGE_SIZE = 24
 
+CURRENCY_AWARD = "award"
+CURRENCY_WITHDRAW = "withdraw"
+
 
 class GachaPoolView(PanelView):
     def __init__(self, bot: Any, guild_id: int, *, page: int = 0) -> None:
@@ -77,7 +80,7 @@ class GachaPoolView(PanelView):
             previous = discord.ui.Button(
                 label="◀",
                 style=discord.ButtonStyle.secondary,
-                row=1,
+                row=2,
             )
             previous.callback = self._previous  # type: ignore[method-assign]
             self.add_item(previous)
@@ -85,7 +88,7 @@ class GachaPoolView(PanelView):
             following = discord.ui.Button(
                 label="▶",
                 style=discord.ButtonStyle.secondary,
-                row=1,
+                row=2,
             )
             following.callback = self._next  # type: ignore[method-assign]
             self.add_item(following)
@@ -107,6 +110,15 @@ class GachaPoolView(PanelView):
         )
         currency.callback = self._open_currency  # type: ignore[method-assign]
         self.add_item(currency)
+
+        withdraw = discord.ui.Button(
+            label="Забрать валюту",
+            emoji="💸",
+            style=discord.ButtonStyle.danger,
+            row=1,
+        )
+        withdraw.callback = self._open_withdraw  # type: ignore[method-assign]
+        self.add_item(withdraw)
 
         back = discord.ui.Button(
             label="Назад",
@@ -144,7 +156,8 @@ class GachaPoolView(PanelView):
                 f"Всего предметов: **{len(items)}**.\n"
                 "Выберите предмет в меню, чтобы изменить название, редкость, "
                 "описание, вес, картинку или анонс.\n\n"
-                "Кнопка **«Начислить валюту»** позволяет выдать игроку "
+                "Кнопки **«Начислить валюту»** и **«Забрать валюту»** "
+                "позволяют выдать или списать у игрока "
                 f"{CURRENCY_EMOJI} {CURRENCY_NAME}."
             ),
             color=PANEL_COLOR,
@@ -210,6 +223,14 @@ class GachaPoolView(PanelView):
             interaction, GachaCurrencyView(self.bot, self.guild_id)
         )
 
+    async def _open_withdraw(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction,
+            GachaCurrencyView(
+                self.bot, self.guild_id, mode=CURRENCY_WITHDRAW
+            ),
+        )
+
     async def _back(self, interaction: discord.Interaction) -> None:
         await self.show_view(
             interaction, SettingsView(self.bot, self.guild_id)
@@ -218,10 +239,18 @@ class GachaPoolView(PanelView):
 
 class GachaCurrencyView(PanelView):
     def __init__(
-        self, bot: Any, guild_id: int, *, notice: str | None = None
+        self,
+        bot: Any,
+        guild_id: int,
+        *,
+        notice: str | None = None,
+        mode: str = CURRENCY_AWARD,
     ) -> None:
         super().__init__(bot, guild_id)
+        if mode not in {CURRENCY_AWARD, CURRENCY_WITHDRAW}:
+            raise ValueError(f"Unknown currency mode: {mode}")
         self.notice = notice
+        self.mode = mode
 
         select = discord.ui.UserSelect(
             placeholder="Выберите пользователя",
@@ -233,9 +262,17 @@ class GachaCurrencyView(PanelView):
         self.add_item(select)
 
         everyone = discord.ui.Button(
-            label="Выдать всем",
-            emoji="👥",
-            style=discord.ButtonStyle.success,
+            label=(
+                "Забрать у всех"
+                if self.withdraw
+                else "Выдать всем"
+            ),
+            emoji="💸" if self.withdraw else "👥",
+            style=(
+                discord.ButtonStyle.danger
+                if self.withdraw
+                else discord.ButtonStyle.success
+            ),
             row=1,
         )
         everyone.callback = self._everyone  # type: ignore[method-assign]
@@ -248,6 +285,10 @@ class GachaCurrencyView(PanelView):
         )
         back.callback = self._back  # type: ignore[method-assign]
         self.add_item(back)
+
+    @property
+    def withdraw(self) -> bool:
+        return self.mode == CURRENCY_WITHDRAW
 
     async def fetch_all_recipient_ids(self) -> list[int]:
         guild = self.bot.get_guild(self.guild_id)
@@ -271,19 +312,34 @@ class GachaCurrencyView(PanelView):
         return sorted(ids)
 
     def build_embed(self) -> discord.Embed:
-        description = (
-            "Выберите пользователя, чтобы начислить ему "
-            f"{CURRENCY_EMOJI} **{CURRENCY_NAME}**.\n\n"
-            "**«Выдать всем»** получает полный список участников "
-            "сервера и начисляет каждому.\n\n"
-            f"Максимум за одну операцию: **{MAX_GACHA_CURRENCY_AWARD:,}**."
-        )
+        if self.withdraw:
+            description = (
+                "Выберите пользователя, чтобы списать у него "
+                f"{CURRENCY_EMOJI} **{CURRENCY_NAME}**.\n\n"
+                "**«Забрать у всех»** списывает сумму у всех, у кого есть "
+                "сохранённый профиль и положительный баланс.\n\n"
+                f"Максимум за одну операцию: **{MAX_GACHA_CURRENCY_AWARD:,}**.\n"
+                "Баланс не уходит в минус: если валюты меньше, спишется "
+                "только то, что есть."
+            )
+            title = "💸 Списание осколков"
+            color = discord.Color.dark_red()
+        else:
+            description = (
+                "Выберите пользователя, чтобы начислить ему "
+                f"{CURRENCY_EMOJI} **{CURRENCY_NAME}**.\n\n"
+                "**«Выдать всем»** получает полный список участников "
+                "сервера и начисляет каждому.\n\n"
+                f"Максимум за одну операцию: **{MAX_GACHA_CURRENCY_AWARD:,}**."
+            )
+            title = "✨ Начисление осколков"
+            color = PANEL_COLOR
         if self.notice:
             description = f"{self.notice}\n\n{description}"
         return discord.Embed(
-            title="✨ Начисление осколков",
+            title=title,
             description=description.replace(",", " "),
-            color=PANEL_COLOR,
+            color=color,
         )
 
     async def _everyone(self, interaction: discord.Interaction) -> None:
@@ -295,6 +351,7 @@ class GachaCurrencyView(PanelView):
                 "всем участникам",
                 self,
                 all_members=True,
+                mode=self.mode,
             )
         )
 
@@ -317,7 +374,12 @@ class GachaCurrencyView(PanelView):
             return
         if member.bot:
             await interaction.response.send_message(
-                "Нельзя начислять валюту боту.", ephemeral=True
+                (
+                    "Нельзя списывать валюту у бота."
+                    if self.withdraw
+                    else "Нельзя начислять валюту боту."
+                ),
+                ephemeral=True,
             )
             return
         await interaction.response.send_modal(
@@ -327,6 +389,7 @@ class GachaCurrencyView(PanelView):
                 member.id,
                 member.display_name,
                 self,
+                mode=self.mode,
             )
         )
 
@@ -346,14 +409,22 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
         parent: GachaCurrencyView,
         *,
         all_members: bool = False,
+        mode: str = CURRENCY_AWARD,
     ) -> None:
-        title = "Начислить всем" if all_members else "Начислить осколки"
+        if mode not in {CURRENCY_AWARD, CURRENCY_WITHDRAW}:
+            raise ValueError(f"Unknown currency mode: {mode}")
+        withdraw = mode == CURRENCY_WITHDRAW
+        if all_members:
+            title = "Забрать у всех" if withdraw else "Начислить всем"
+        else:
+            title = "Забрать осколки" if withdraw else "Начислить осколки"
         super().__init__(title=title)
         self.bot = bot
         self.guild_id = int(guild_id)
         self.target_id = int(target_id)
         self.target_name = target_name
         self.all_members = all_members
+        self.mode = mode
         self.parent_view = parent
         if all_members:
             placeholder = "Полный список участников"
@@ -388,67 +459,44 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
             await interaction.response.defer(
                 ephemeral=True, thinking=True
             )
-            try:
-                user_ids = (
-                    await self.parent_view.fetch_all_recipient_ids()
-                )
-            except RuntimeError as exc:
-                await interaction.followup.send(
-                    f"❌ {exc}", ephemeral=True
-                )
-                try:
-                    await interaction.delete_original_response()
-                except (
-                    discord.NotFound,
-                    discord.Forbidden,
-                    discord.HTTPException,
-                ):
-                    pass
-                return
-            if not user_ids:
-                await interaction.followup.send(
-                    "❌ Не найдено участников для начисления.",
-                    ephemeral=True,
-                )
-                try:
-                    await interaction.delete_original_response()
-                except (
-                    discord.NotFound,
-                    discord.Forbidden,
-                    discord.HTTPException,
-                ):
-                    pass
-                return
+            if self.mode == CURRENCY_WITHDRAW:
+                await self._withdraw_everyone(interaction, amount)
+            else:
+                await self._award_everyone(interaction, amount)
+            return
 
-            updated = self.bot.store.add_currency_to_users(
-                self.guild_id, user_ids, amount
+        if self.mode == CURRENCY_WITHDRAW:
+            before = self.bot.store.profile_for(
+                self.guild_id, self.target_id
+            )["balance"]
+            profile = self.bot.store.remove_currency(
+                self.guild_id, self.target_id, amount
             )
-            total = amount * updated
+            withdrawn = before - profile["balance"]
             log.info(
-                "Администратор %s начислил %s осколков %s участникам",
+                "Администратор %s списал %s осколков у пользователя %s",
                 interaction.user.id,
-                amount,
-                updated,
+                withdrawn,
+                self.target_id,
             )
-            embed = discord.Embed(
-                title="✅ Начислено всем",
-                description=(
-                    f"Полный список участников получен.\n\n"
-                    f"**{updated}** участникам начислено по "
-                    f"**{amount:,}** {CURRENCY_EMOJI} {CURRENCY_NAME}.\n"
-                    f"Всего начислено: **{total:,}**."
-                ).replace(",", " "),
-                color=discord.Color.green(),
+            if withdrawn > 0:
+                notice = (
+                    f"✅ Списано **{withdrawn:,}** {CURRENCY_EMOJI} "
+                    f"{CURRENCY_NAME} у <@{self.target_id}>.\n"
+                    f"Новый баланс: **{profile['balance']:,}**."
+                )
+            else:
+                notice = (
+                    f"ℹ️ У <@{self.target_id}> не было {CURRENCY_EMOJI} "
+                    f"{CURRENCY_NAME}. Баланс: **0**."
+                )
+            new_view = GachaCurrencyView(
+                self.bot,
+                self.guild_id,
+                notice=notice.replace(",", " "),
+                mode=self.mode,
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            try:
-                await interaction.delete_original_response()
-            except (
-                discord.NotFound,
-                discord.Forbidden,
-                discord.HTTPException,
-            ):
-                pass
+            await self.parent_view.show_view(interaction, new_view)
             return
 
         profile = self.bot.store.add_currency(
@@ -470,6 +518,106 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
             ).replace(",", " "),
         )
         await self.parent_view.show_view(interaction, new_view)
+
+    async def _award_everyone(
+        self, interaction: discord.Interaction, amount: int
+    ) -> None:
+        try:
+            user_ids = (
+                await self.parent_view.fetch_all_recipient_ids()
+            )
+        except RuntimeError as exc:
+            await interaction.followup.send(
+                f"❌ {exc}", ephemeral=True
+            )
+            await self._delete_original_response(interaction)
+            return
+        if not user_ids:
+            await interaction.followup.send(
+                "❌ Не найдено участников для начисления.",
+                ephemeral=True,
+            )
+            await self._delete_original_response(interaction)
+            return
+
+        updated = self.bot.store.add_currency_to_users(
+            self.guild_id, user_ids, amount
+        )
+        total = amount * updated
+        log.info(
+            "Администратор %s начислил %s осколков %s участникам",
+            interaction.user.id,
+            amount,
+            updated,
+        )
+        embed = discord.Embed(
+            title="✅ Начислено всем",
+            description=(
+                f"Полный список участников получен.\n\n"
+                f"**{updated}** участникам начислено по "
+                f"**{amount:,}** {CURRENCY_EMOJI} {CURRENCY_NAME}.\n"
+                f"Всего начислено: **{total:,}**."
+            ).replace(",", " "),
+            color=discord.Color.green(),
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        await self._delete_original_response(interaction)
+
+    async def _withdraw_everyone(
+        self, interaction: discord.Interaction, amount: int
+    ) -> None:
+        user_ids = self.bot.store.gacha_profile_ids(self.guild_id)
+        if not user_ids:
+            await interaction.followup.send(
+                "❌ Пока нет профилей, у которых можно списать валюту.",
+                ephemeral=True,
+            )
+            await self._delete_original_response(interaction)
+            return
+
+        updated, total = self.bot.store.remove_currency_from_users(
+            self.guild_id, user_ids, amount
+        )
+        log.info(
+            "Администратор %s списал до %s осколков у %s участников",
+            interaction.user.id,
+            amount,
+            updated,
+        )
+        if updated:
+            title = "✅ Списано у всех"
+            description = (
+                f"**{updated}** участникам списано до "
+                f"**{amount:,}** {CURRENCY_EMOJI} {CURRENCY_NAME} "
+                "с каждого (меньше, если на балансе было недостаточно).\n"
+                f"Всего списано: **{total:,}**."
+            )
+            color = discord.Color.green()
+        else:
+            title = "ℹ️ Списывать нечего"
+            description = (
+                "Ни у кого из участников не было валюты на балансе."
+            )
+            color = discord.Color.orange()
+        embed = discord.Embed(
+            title=title,
+            description=description.replace(",", " "),
+            color=color,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        await self._delete_original_response(interaction)
+
+    async def _delete_original_response(
+        self, interaction: discord.Interaction
+    ) -> None:
+        try:
+            await interaction.delete_original_response()
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+        ):
+            pass
 
 
 class GachaItemView(PanelView):

@@ -36,6 +36,7 @@ from raidbot.gacha_roles import (
     role_rewards,
 )
 from raidbot.gacha_settings import (
+    CURRENCY_WITHDRAW,
     GachaCurrencyAmountModal,
     GachaCurrencyView,
     GachaItemImageSourceView,
@@ -297,6 +298,28 @@ class GachaStoreTests(unittest.TestCase):
         self.assertEqual(restored["balance"], 400)
         self.assertEqual(restored["inventory"]["core-of-harmony"], 1)
         self.assertEqual(restored["core_pity"], 3)
+
+    def test_currency_can_be_removed_and_balance_never_goes_negative(self) -> None:
+        self.store.add_currency(1, 10, 500)
+        profile = self.store.remove_currency(1, 10, 150)
+        self.assertEqual(profile["balance"], 350)
+        profile = self.store.remove_currency(1, 10, 1000)
+        self.assertEqual(profile["balance"], 0)
+        with self.assertRaises(ValueError):
+            self.store.remove_currency(1, 10, 0)
+
+    def test_currency_can_be_removed_from_all_profiles(self) -> None:
+        self.store.add_currency(1, 10, 500)
+        self.store.add_currency(1, 11, 100)
+        self.store.add_currency(1, 12, 0)
+        updated, total = self.store.remove_currency_from_users(
+            1, ["10", "11", "12", "13"], 150
+        )
+        self.assertEqual(updated, 2)
+        self.assertEqual(total, 250)
+        self.assertEqual(self.store.profile_for(1, 10)["balance"], 350)
+        self.assertEqual(self.store.profile_for(1, 11)["balance"], 0)
+        self.assertNotIn("13", self.store.gacha_profile_ids(1))
 
     def test_activity_reward_is_idempotent_and_expires(self) -> None:
         self.store.register_activity_event(
@@ -633,6 +656,7 @@ class GachaEmbedTests(unittest.TestCase):
             item.label for item in pool.children if hasattr(item, "label")
         ]
         self.assertIn("Начислить валюту", pool_labels)
+        self.assertIn("Забрать валюту", pool_labels)
 
         item_view = GachaItemView(self.bot, 1, "core-of-harmony")
         item_embed = item_view.build_embed()
@@ -736,6 +760,93 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             embed = response.edit_message.await_args.kwargs["embed"]
             self.assertIn("Начислено", embed.description)
             self.assertIn("500", embed.description)
+
+    async def test_currency_view_and_withdraw_modal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            store.add_currency(1, 10, 500)
+
+            view = GachaCurrencyView(bot, 1, mode=CURRENCY_WITHDRAW)
+            self.assertIn("Списание", view.build_embed().title)
+            labels = [
+                item.label
+                for item in view.children
+                if hasattr(item, "label")
+            ]
+            self.assertIn("Забрать у всех", labels)
+
+            view.message = SimpleNamespace(id=1)
+            modal = GachaCurrencyAmountModal(
+                bot,
+                1,
+                10,
+                "Игрок",
+                view,
+                mode=CURRENCY_WITHDRAW,
+            )
+            modal.amount_input._value = "200"
+            response = SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            )
+            interaction = SimpleNamespace(
+                message=SimpleNamespace(id=1),
+                user=SimpleNamespace(id=999),
+                response=response,
+            )
+
+            await modal.on_submit(interaction)
+
+            self.assertEqual(store.profile_for(1, 10)["balance"], 300)
+            response.edit_message.assert_awaited_once()
+            embed = response.edit_message.await_args.kwargs["embed"]
+            self.assertIn("Списано", embed.description)
+            self.assertIn("300", embed.description)
+
+    async def test_withdraw_from_all_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            store.add_currency(1, 10, 500)
+            store.add_currency(1, 11, 100)
+
+            view = GachaCurrencyView(bot, 1, mode=CURRENCY_WITHDRAW)
+            view.message = SimpleNamespace(id=1)
+            modal = GachaCurrencyAmountModal(
+                bot,
+                1,
+                0,
+                "всем участникам",
+                view,
+                all_members=True,
+                mode=CURRENCY_WITHDRAW,
+            )
+            modal.amount_input._value = "150"
+            response = SimpleNamespace(
+                defer=AsyncMock(),
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            )
+            followup = SimpleNamespace(send=AsyncMock())
+            interaction = SimpleNamespace(
+                message=SimpleNamespace(id=1),
+                user=SimpleNamespace(id=999),
+                response=response,
+                followup=followup,
+                delete_original_response=AsyncMock(),
+            )
+
+            await modal.on_submit(interaction)
+
+            self.assertEqual(store.profile_for(1, 10)["balance"], 350)
+            self.assertEqual(store.profile_for(1, 11)["balance"], 0)
+            response.defer.assert_awaited_once()
+            followup.send.assert_awaited_once()
+            interaction.delete_original_response.assert_awaited_once()
+            embed = followup.send.await_args.kwargs["embed"]
+            self.assertIn("2", embed.description)
+            self.assertIn("250", embed.description)
 
     async def test_award_to_all_server_members(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

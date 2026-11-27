@@ -434,6 +434,18 @@ class Store:
         self._save()
         return profile
 
+    def remove_currency(
+        self, guild_id: str | int, user_id: str | int, amount: int
+    ) -> dict[str, Any]:
+        amount = int(amount)
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной.")
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        profile["balance"] = max(0, profile["balance"] - amount)
+        profile["updated_at"] = int(time.time())
+        self._save()
+        return profile
+
     def gacha_profile_ids(self, guild_id: str | int) -> list[str]:
         profiles = self.data.get("profiles", {}).get(str(guild_id), {})
         return [str(user_id) for user_id in profiles]
@@ -462,6 +474,40 @@ class Store:
         if updated:
             self._save()
         return updated
+
+    def remove_currency_from_users(
+        self,
+        guild_id: str | int,
+        user_ids: list[str | int],
+        amount: int,
+    ) -> tuple[int, int]:
+        amount = int(amount)
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной.")
+        profiles = self.data.get("profiles", {}).get(str(guild_id), {})
+        updated = 0
+        total = 0
+        seen: set[str] = set()
+        now = int(time.time())
+        for user_id in user_ids:
+            key = str(user_id)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            profile = profiles.get(key)
+            if not isinstance(profile, dict):
+                continue
+            balance = max(0, self._safe_int(profile.get("balance"), 0))
+            withdrawn = min(balance, amount)
+            if withdrawn <= 0:
+                continue
+            profile["balance"] = balance - withdrawn
+            profile["updated_at"] = now
+            updated += 1
+            total += withdrawn
+        if updated:
+            self._save()
+        return updated, total
 
     def mark_role_reward(
         self,
