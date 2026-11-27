@@ -99,9 +99,9 @@ class SettingsPanelTests(unittest.TestCase):
             [item.label for item in general.children],
             ["Название рейда", "Танки", "Хилы", "ДД", "Часовой пояс"],
         )
-        self.assertEqual(general.tank_input.default, "1")
+        self.assertEqual(general.tank_input.default, "0")
         self.assertEqual(general.heal_input.default, "2")
-        self.assertEqual(general.dd_input.default, "7")
+        self.assertEqual(general.dd_input.default, "8")
         self.assertEqual(general.timezone_input.default, "Europe/Moscow")
 
         add = AddActivityModal(self.bot, 1, panel)

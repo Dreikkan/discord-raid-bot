@@ -94,12 +94,8 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_view.role, "tank")
         self.assertEqual(new_view.build_embed(self.raid).title, "Регистрация на рейд")
 
-    async def test_status_join_redirects_to_bench_when_full(self) -> None:
-        self.store.set_limits(self.guild_id, {"tank": 1, "heal": 3, "dd": 8})
-        self.raid = self.store.get_raid(self.raid["id"])
-        assert self.raid is not None
-        self.raid["limits"]["tank"] = 1
-        self.store.save()
+    async def test_tank_goes_to_bench_when_tank_is_taken(self) -> None:
+        self.store.set_limits(self.guild_id, {"tank": 0, "heal": 3, "dd": 8})
         self.store.set_registration(
             self.raid["id"],
             100,
@@ -120,11 +116,13 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
 
         saved = self.store.get_raid(self.raid["id"])
         assert saved is not None
-        self.assertEqual(saved["registrations"]["777"]["status"], STATUS_BENCH)
+        registration = saved["registrations"]["777"]
+        self.assertEqual(registration["status"], STATUS_BENCH)
+        self.assertTrue(registration["waiting_for_tank_slot"])
         interaction.response.defer.assert_awaited_once()
         interaction.edit_original_response.assert_awaited_once()
         done_embed = interaction.edit_original_response.await_args.kwargs["embed"]
-        self.assertIn("скамью запасных", done_embed.description)
+        self.assertIn("автоматически", done_embed.description)
 
     async def test_status_join_stays_main_when_space_is_available(self) -> None:
         spec = self.store.specs_for_role(self.guild_id, "tank")[0]
@@ -136,10 +134,13 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
 
         saved = self.store.get_raid(self.raid["id"])
         assert saved is not None
-        self.assertEqual(saved["registrations"]["777"]["status"], STATUS_MAIN)
+        registration = saved["registrations"]["777"]
+        self.assertEqual(registration["role"], "tank")
+        self.assertEqual(registration["status"], STATUS_MAIN)
+        self.assertFalse(registration["waiting_for_tank_slot"])
 
-    async def test_next_dd_becomes_tank_when_dd_is_full(self) -> None:
-        for user_id in range(1, 8):
+    async def test_tank_waits_when_dd_is_eight_of_eight(self) -> None:
+        for user_id in range(1, 9):
             self.store.set_registration(
                 self.raid["id"],
                 user_id,
@@ -148,12 +149,8 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
                 display_name=f"DD {user_id}",
                 status=STATUS_MAIN,
             )
-        self.raid = self.store.get_raid(self.raid["id"])
-        assert self.raid is not None
-        dd_spec = self.store.specs_for_role(self.guild_id, "dd")[0]
-
-        view = StatusView(self.bot, self.raid["id"], 777, "dd", [dd_spec])
-        self.assertIn("Танк", view.build_embed(self.raid).description)
+        spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        view = StatusView(self.bot, self.raid["id"], 777, "tank", [spec])
         interaction = FakeInteraction()
 
         with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
@@ -163,14 +160,139 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         assert saved is not None
         registration = saved["registrations"]["777"]
         self.assertEqual(registration["role"], "tank")
-        self.assertEqual(registration["status"], STATUS_MAIN)
-        self.assertTrue(registration["converted_from_dd"])
-        self.assertEqual(
-            registration["specializations"][0]["id"], dd_spec["id"]
+        self.assertEqual(registration["status"], STATUS_BENCH)
+        self.assertTrue(registration["waiting_for_tank_slot"])
+
+    async def test_waiting_tank_is_promoted_when_dd_frees_slot(self) -> None:
+        for user_id in range(1, 9):
+            self.store.set_registration(
+                self.raid["id"],
+                user_id,
+                role="dd",
+                specializations=[],
+                display_name=f"DD {user_id}",
+                status=STATUS_MAIN,
+            )
+        tank_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        self.store.set_registration(
+            self.raid["id"],
+            100,
+            role="tank",
+            specializations=[tank_spec],
+            display_name="Танк",
+            status=STATUS_BENCH,
+            waiting_for_tank_slot=True,
         )
-        done_embed = interaction.edit_original_response.await_args.kwargs["embed"]
-        self.assertEqual(done_embed.title, "Вы добавлены в Танк")
-        self.assertIn("ДД-специализация сохранена", done_embed.description)
+        self.store.set_registration(
+            self.raid["id"],
+            1,
+            role="dd",
+            specializations=[],
+            display_name="DD 1",
+            status=STATUS_BENCH,
+        )
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_MAIN
+        )
+        self.assertFalse(
+            saved["registrations"]["100"]["waiting_for_tank_slot"]
+        )
+
+    async def test_main_tank_switching_to_bench_keeps_waiting_tank_benched(
+        self,
+    ) -> None:
+        tank_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        self.store.set_registration(
+            self.raid["id"],
+            100,
+            role="tank",
+            specializations=[tank_spec],
+            display_name="Танк",
+            status=STATUS_MAIN,
+        )
+        for user_id in range(1, 8):
+            self.store.set_registration(
+                self.raid["id"],
+                user_id,
+                role="dd",
+                specializations=[],
+                display_name=f"DD {user_id}",
+                status=STATUS_MAIN,
+            )
+        self.store.set_registration(
+            self.raid["id"],
+            200,
+            role="tank",
+            specializations=[tank_spec],
+            display_name="Ожидающий",
+            status=STATUS_BENCH,
+            waiting_for_tank_slot=True,
+        )
+
+        view = StatusView(
+            self.bot, self.raid["id"], 100, "tank", [tank_spec]
+        )
+        interaction = FakeInteraction()
+
+        with patch(
+            "raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)
+        ):
+            await view._set_status(interaction, status=STATUS_BENCH)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_BENCH
+        )
+        self.assertEqual(
+            saved["registrations"]["200"]["status"], STATUS_BENCH
+        )
+        self.assertTrue(
+            saved["registrations"]["200"]["waiting_for_tank_slot"]
+        )
+
+    async def test_dd_switching_to_bench_promotes_waiting_tank(self) -> None:
+        dd_spec = self.store.specs_for_role(self.guild_id, "dd")[0]
+        tank_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        for user_id in range(1, 9):
+            self.store.set_registration(
+                self.raid["id"],
+                user_id,
+                role="dd",
+                specializations=[dd_spec],
+                display_name=f"DD {user_id}",
+                status=STATUS_MAIN,
+            )
+        self.store.set_registration(
+            self.raid["id"],
+            200,
+            role="tank",
+            specializations=[tank_spec],
+            display_name="Ожидающий",
+            status=STATUS_BENCH,
+            waiting_for_tank_slot=True,
+        )
+
+        view = StatusView(self.bot, self.raid["id"], 1, "dd", [dd_spec])
+        interaction = FakeInteraction()
+
+        with patch(
+            "raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)
+        ):
+            await view._set_status(interaction, status=STATUS_BENCH)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        self.assertEqual(saved["registrations"]["1"]["status"], STATUS_BENCH)
+        self.assertEqual(
+            saved["registrations"]["200"]["status"], STATUS_MAIN
+        )
+        self.assertFalse(
+            saved["registrations"]["200"]["waiting_for_tank_slot"]
+        )
 
     async def test_dd_can_choose_single_specialization(self) -> None:
         view = SpecSelectView(self.bot, self.raid["id"], 777, "dd")

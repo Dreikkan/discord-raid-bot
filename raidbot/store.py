@@ -30,9 +30,10 @@ from .gacha import (
     normalize_item,
     normalize_items,
 )
+from .registration import rebalance_waiting_tank
 
 _STORE_VERSION = 2
-_SETTINGS_VERSION = 3
+_SETTINGS_VERSION = 4
 
 
 def default_settings() -> dict[str, Any]:
@@ -101,6 +102,11 @@ class Store:
             or not isinstance(data["scheduled_deletions"], list)
         ):
             raise RuntimeError(f"Файл данных {self.path} имеет неверный формат.")
+
+        old_limits = {"tank": 1, "heal": 2, "dd": 7}
+        for raid in data["raids"].values():
+            if isinstance(raid, dict) and raid.get("limits") == old_limits:
+                raid["limits"] = dict(DEFAULT_LIMITS)
         return data
 
     def _save(self) -> None:
@@ -199,7 +205,6 @@ class Store:
         except (TypeError, ValueError):
             settings_version = 1
 
-        # Version 2 switches old persisted limits (2/3/8) to 1/2/7 once.
         limits = raw.get("limits")
         if settings_version >= 2 and isinstance(limits, dict):
             for role in ROLE_ORDER:
@@ -207,7 +212,15 @@ class Store:
                     value = int(limits.get(role, DEFAULT_LIMITS[role]))
                 except (TypeError, ValueError):
                     value = DEFAULT_LIMITS[role]
-                settings["limits"][role] = max(1, min(value, 50))
+                settings["limits"][role] = max(0, min(value, 50))
+
+        # Version 4 changes the old default 1/2/7 to the new base 0/2/8.
+        if settings_version < 4 and settings["limits"] == {
+            "tank": 1,
+            "heal": 2,
+            "dd": 7,
+        }:
+            settings["limits"] = dict(DEFAULT_LIMITS)
 
         timezone = raw.get("timezone")
         if isinstance(timezone, str) and timezone.strip():
@@ -250,7 +263,7 @@ class Store:
     def set_limits(self, guild_id: str | int, limits: dict[str, int]) -> None:
         settings = self.settings_for(guild_id)
         for role in ROLE_ORDER:
-            settings["limits"][role] = max(1, min(int(limits[role]), 50))
+            settings["limits"][role] = max(0, min(int(limits[role]), 50))
         self._save()
 
     def set_timezone(self, guild_id: str | int, timezone: str) -> None:
@@ -821,9 +834,16 @@ class Store:
         specializations: list[dict[str, str]],
         display_name: str,
         status: str,
-        converted_from_dd: bool = False,
+        waiting_for_tank_slot: bool = False,
     ) -> None:
         raid = self.data["raids"][raid_id]
+        previous = raid["registrations"].get(str(user_id))
+        frees_dd_slot = (
+            isinstance(previous, dict)
+            and previous.get("role") == "dd"
+            and previous.get("status") == STATUS_MAIN
+            and not (role == "dd" and status == STATUS_MAIN)
+        )
         clean_specs = [
             {
                 "id": str(spec["id"]),
@@ -837,9 +857,11 @@ class Store:
             "specializations": clean_specs,
             "display_name": display_name,
             "status": status,
-            "converted_from_dd": bool(converted_from_dd),
+            "waiting_for_tank_slot": bool(waiting_for_tank_slot),
             "updated_at": int(time.time()),
         }
+        if frees_dd_slot:
+            rebalance_waiting_tank(raid)
         self._save()
 
     def remove_registration(self, raid_id: str, user_id: str | int) -> bool:
@@ -849,6 +871,11 @@ class Store:
         removed = raid["registrations"].pop(str(user_id), None)
         if removed is None:
             return False
+        if (
+            removed.get("role") == "dd"
+            and removed.get("status") == STATUS_MAIN
+        ):
+            rebalance_waiting_tank(raid)
         self._save()
         return True
 

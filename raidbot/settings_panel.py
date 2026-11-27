@@ -672,9 +672,9 @@ class GeneralSettingsModal(discord.ui.Modal):
             )
             return
 
-        if any(not 1 <= value <= 50 for value in limits.values()):
+        if any(not 0 <= value <= 50 for value in limits.values()):
             await interaction.response.send_message(
-                "❌ Лимиты должны быть от 1 до 50.", ephemeral=True
+                "❌ Лимиты должны быть от 0 до 50.", ephemeral=True
             )
             return
 

@@ -31,7 +31,7 @@ STATUS_LABELS: dict[str, str] = {
 }
 
 DEFAULT_TITLE = "Еженедельный рейд"
-DEFAULT_LIMITS: dict[str, int] = {"tank": 1, "heal": 2, "dd": 7}
+DEFAULT_LIMITS: dict[str, int] = {"tank": 0, "heal": 2, "dd": 8}
 DEFAULT_ROLE_EMOJIS: dict[str, str] = {
     "tank": "<:tank:1575602137033875720>",
     "heal": "<:heal:1575602120672022588>",

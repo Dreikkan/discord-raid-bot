@@ -21,7 +21,7 @@ class StoreTests(unittest.TestCase):
     def test_defaults_and_persistence(self) -> None:
         settings = self.store.settings_for(123)
         self.assertEqual(settings["title"], "Еженедельный рейд")
-        self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
+        self.assertEqual(settings["limits"], {"tank": 0, "heal": 2, "dd": 8})
         self.assertEqual(len(settings["specs"]), 12)
         self.assertTrue(all(spec["emoji"].startswith("<:") for spec in settings["specs"]))
         self.assertEqual(len(settings["activities"]), 4)
@@ -116,9 +116,179 @@ class StoreTests(unittest.TestCase):
 
         reloaded = Store(self.path)
         settings = reloaded.settings_for(123)
-        self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
-        self.assertEqual(settings["settings_version"], 3)
+        self.assertEqual(settings["limits"], {"tank": 0, "heal": 2, "dd": 8})
+        self.assertEqual(settings["settings_version"], 4)
         self.assertEqual(settings["title"], "Старый рейд")
+
+    def test_version_three_default_limits_migrate_to_new_base(self) -> None:
+        old_data = {
+            "version": 2,
+            "guilds": {
+                "123": {
+                    "settings_version": 3,
+                    "title": "Рейд",
+                    "limits": {"tank": 1, "heal": 2, "dd": 7},
+                    "timezone": "Europe/Moscow",
+                }
+            },
+            "raids": {},
+            "profiles": {},
+            "activity_events": {},
+        }
+        self.path.write_text(
+            json.dumps(old_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        reloaded = Store(self.path)
+        settings = reloaded.settings_for(123)
+        self.assertEqual(settings["limits"], {"tank": 0, "heal": 2, "dd": 8})
+        self.assertEqual(settings["settings_version"], 4)
+
+    def test_old_raid_limits_are_migrated_to_new_base(self) -> None:
+        old_data = {
+            "version": 2,
+            "guilds": {},
+            "raids": {
+                "raid1": {
+                    "id": "raid1",
+                    "limits": {"tank": 1, "heal": 2, "dd": 7},
+                    "registrations": {},
+                }
+            },
+            "profiles": {},
+            "activity_events": {},
+            "scheduled_deletions": [],
+        }
+        self.path.write_text(
+            json.dumps(old_data, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        reloaded = Store(self.path)
+        saved = reloaded.get_raid("raid1")
+        assert saved is not None
+        self.assertEqual(
+            saved["limits"], {"tank": 0, "heal": 2, "dd": 8}
+        )
+
+    def make_raid(self) -> dict:
+        return self.store.create_raid(
+            guild_id=1,
+            channel_id=2,
+            created_by=3,
+            title="Рейд",
+            description="",
+            start_at=1_800_000_000,
+            limits={"tank": 0, "heal": 2, "dd": 8},
+            role_emojis={"tank": "🛡️", "heal": "💚", "dd": "⚔️"},
+        )
+
+    def add_dd(
+        self,
+        raid_id: str,
+        user_id: int,
+        *,
+        status: str = STATUS_MAIN,
+    ) -> None:
+        self.store.set_registration(
+            raid_id,
+            user_id,
+            role="dd",
+            specializations=[],
+            display_name=f"ДД {user_id}",
+            status=status,
+        )
+
+    def add_tank(
+        self,
+        raid_id: str,
+        user_id: int,
+        *,
+        status: str = STATUS_MAIN,
+        waiting: bool = False,
+    ) -> None:
+        self.store.set_registration(
+            raid_id,
+            user_id,
+            role="tank",
+            specializations=[],
+            display_name=f"Танк {user_id}",
+            status=status,
+            waiting_for_tank_slot=waiting,
+        )
+
+    def test_main_tank_removal_keeps_waiting_tank_benched(self) -> None:
+        raid = self.make_raid()
+        self.add_tank(raid["id"], 1)
+        for user_id in range(10, 17):
+            self.add_dd(raid["id"], user_id)
+        self.add_tank(raid["id"], 100, status=STATUS_BENCH, waiting=True)
+
+        self.assertTrue(self.store.remove_registration(raid["id"], 1))
+
+        saved = self.store.get_raid(raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_BENCH
+        )
+        self.assertTrue(
+            saved["registrations"]["100"]["waiting_for_tank_slot"]
+        )
+
+    def test_main_tank_switching_to_bench_keeps_waiting_tank_benched(
+        self,
+    ) -> None:
+        raid = self.make_raid()
+        self.add_tank(raid["id"], 1)
+        for user_id in range(10, 17):
+            self.add_dd(raid["id"], user_id)
+        self.add_tank(raid["id"], 100, status=STATUS_BENCH, waiting=True)
+
+        self.add_tank(raid["id"], 1, status=STATUS_BENCH)
+
+        saved = self.store.get_raid(raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_BENCH
+        )
+        self.assertTrue(
+            saved["registrations"]["100"]["waiting_for_tank_slot"]
+        )
+
+    def test_main_dd_removal_promotes_waiting_tank(self) -> None:
+        raid = self.make_raid()
+        for user_id in range(10, 18):
+            self.add_dd(raid["id"], user_id)
+        self.add_tank(raid["id"], 100, status=STATUS_BENCH, waiting=True)
+
+        self.assertTrue(self.store.remove_registration(raid["id"], 10))
+
+        saved = self.store.get_raid(raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_MAIN
+        )
+        self.assertFalse(
+            saved["registrations"]["100"]["waiting_for_tank_slot"]
+        )
+
+    def test_main_dd_switching_to_bench_promotes_waiting_tank(self) -> None:
+        raid = self.make_raid()
+        for user_id in range(10, 18):
+            self.add_dd(raid["id"], user_id)
+        self.add_tank(raid["id"], 100, status=STATUS_BENCH, waiting=True)
+
+        self.add_dd(raid["id"], 10, status=STATUS_BENCH)
+
+        saved = self.store.get_raid(raid["id"])
+        assert saved is not None
+        self.assertEqual(
+            saved["registrations"]["100"]["status"], STATUS_MAIN
+        )
+        self.assertFalse(
+            saved["registrations"]["100"]["waiting_for_tank_slot"]
+        )
 
     def test_raid_and_registration_round_trip(self) -> None:
         raid = self.store.create_raid(

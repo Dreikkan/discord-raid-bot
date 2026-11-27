@@ -72,11 +72,11 @@ class EmbedTests(unittest.TestCase):
         self.assertIn("Сбор в Discord.", embed.description)
 
         fields = {field.name: field.value for field in embed.fields}
-        self.assertIn("🛡️ Танк: (2/2)", fields)
+        self.assertIn("🛡️ Танк: (2/3)", fields)
         self.assertIn("💚 Хил: (1/3)", fields)
-        self.assertIn("⚔️ ДД: (0/4)", fields)
-        self.assertIn("🐻 🔮 Игрок 1", fields["🛡️ Танк: (2/2)"])
-        self.assertIn("🩸 Игрок\\_2", fields["🛡️ Танк: (2/2)"])
+        self.assertIn("⚔️ ДД: (0/3)", fields)
+        self.assertIn("🐻 🔮 Игрок 1", fields["🛡️ Танк: (2/3)"])
+        self.assertIn("🩸 Игрок\\_2", fields["🛡️ Танк: (2/3)"])
         self.assertIn("🔮 Игрок 5", fields["🪑 Скамья запасных (1)"])
         self.assertIn("⚔️ Игрок 6", fields["❌ Буду отсутствовать (1)"])
 
@@ -87,9 +87,9 @@ class EmbedTests(unittest.TestCase):
         self.assertEqual(
             [field.name for field in role_fields],
             [
-                "🛡️ Танк: (2/2)",
+                "🛡️ Танк: (2/3)",
                 "💚 Хил: (1/3)",
-                "⚔️ ДД: (0/4)",
+                "⚔️ ДД: (0/3)",
             ],
         )
         self.assertTrue(all(field.inline for field in role_fields))
@@ -116,6 +116,63 @@ class EmbedTests(unittest.TestCase):
         fields = {field.name: field.value for field in embed.fields}
         self.assertEqual(fields["🛡️ Танк: (0/2)"], "—")
         self.assertEqual(fields["🪑 Скамья запасных (0)"], "—")
+
+    def test_default_composition_zero_tank_and_eight_dd(self) -> None:
+        raid = make_raid()
+        raid["limits"] = {"tank": 0, "heal": 2, "dd": 8}
+        raid["registrations"] = {}
+        fields = {
+            field.name: field.value
+            for field in build_raid_embed(raid).fields
+        }
+        self.assertEqual(fields["🛡️ Танк: (0/0)"], "—")
+        self.assertEqual(fields["💚 Хил: (0/2)"], "—")
+        self.assertEqual(fields["⚔️ ДД: (0/8)"], "—")
+
+    def test_tank_registration_switches_composition_to_one_tank(self) -> None:
+        raid = make_raid()
+        raid["limits"] = {"tank": 0, "heal": 2, "dd": 8}
+        raid["registrations"] = {
+            "1": {
+                "role": "tank",
+                "status": STATUS_MAIN,
+                "specializations": [],
+                "display_name": "Танк",
+            }
+        }
+        fields = {
+            field.name: field.value
+            for field in build_raid_embed(raid).fields
+        }
+        self.assertIn("🛡️ Танк: (1/1)", fields)
+        self.assertIn("💚 Хил: (0/2)", fields)
+        self.assertIn("⚔️ ДД: (0/7)", fields)
+
+    def test_composition_reverts_when_tank_leaves(self) -> None:
+        raid = make_raid()
+        raid["limits"] = {"tank": 0, "heal": 2, "dd": 8}
+        raid["registrations"] = {
+            "1": {
+                "role": "tank",
+                "status": STATUS_MAIN,
+                "specializations": [],
+                "display_name": "Танк",
+            }
+        }
+        fields = {
+            field.name: field.value
+            for field in build_raid_embed(raid).fields
+        }
+        self.assertIn("🛡️ Танк: (1/1)", fields)
+        self.assertIn("⚔️ ДД: (0/7)", fields)
+
+        raid["registrations"] = {}
+        fields = {
+            field.name: field.value
+            for field in build_raid_embed(raid).fields
+        }
+        self.assertIn("🛡️ Танк: (0/0)", fields)
+        self.assertIn("⚔️ ДД: (0/8)", fields)
 
     def test_embed_total_length_stays_within_discord_limit(self) -> None:
         raid = make_raid()

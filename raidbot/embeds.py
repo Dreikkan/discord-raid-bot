@@ -15,7 +15,7 @@ from .constants import (
     STATUS_BENCH,
     STATUS_MAIN,
 )
-from .registration import registration_specializations
+from .registration import effective_limits, registration_specializations
 from .text import escape_markdown
 
 _FIELD_VALUE_LIMIT = 1024
@@ -83,7 +83,7 @@ def _format_players(
 
 def _role_field_name(raid: dict[str, Any], role: str, count: int) -> str:
     emoji = str(raid.get("role_emojis", {}).get(role, "")).strip()
-    limit = int(raid.get("limits", {}).get(role, 0))
+    limit = int(effective_limits(raid).get(role, 0))
     label = f"{ROLE_LABELS[role]}: ({count}/{limit})"
     return f"{emoji} {label}".strip()
 
