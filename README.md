@@ -77,6 +77,12 @@ python bot.py
 
 Или на Windows просто запустите `run.bat`.
 
+Если проект уже был установлен раньше, после обновления кода обновите зависимости:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
 В `.env` нужно указать:
 
 ```env
