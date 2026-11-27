@@ -27,6 +27,7 @@ from .registration import (
     count_main_for_role,
     registration_specializations,
     resolve_requested_status,
+    should_redirect_dd_to_tank,
 )
 from .specs import to_partial_emoji
 
@@ -466,13 +467,26 @@ class StatusView(WizardView):
         ]
 
         if free_slots <= 0:
-            lines.extend(
-                (
-                    "",
-                    "⚠️ Основной состав этой роли заполнен. Кнопка "
-                    "«Присоединиться» переведёт вас в скамью запасных.",
+            if should_redirect_dd_to_tank(
+                raid, self.user_id, self.role, STATUS_MAIN
+            ):
+                dd_limit = int(raid.get("limits", {}).get("dd", 0))
+                lines.extend(
+                    (
+                        "",
+                        f"⚠️ Все {dd_limit} мест ДД заняты. При нажатии "
+                        "«Присоединиться» вы будете добавлены в **Танк**; "
+                        "выбранная ДД-специализация сохранится.",
+                    )
                 )
-            )
+            else:
+                lines.extend(
+                    (
+                        "",
+                        "⚠️ Основной состав этой роли заполнен. Кнопка "
+                        "«Присоединиться» переведёт вас в скамью запасных.",
+                    )
+                )
 
         lines.extend(
             (
@@ -520,9 +534,20 @@ class StatusView(WizardView):
             )
             return
 
-        effective_status, redirected = resolve_requested_status(
+        effective_role = self.role
+        effective_specs = self.specs
+        redirected_to_tank = False
+        if should_redirect_dd_to_tank(
             raid, self.user_id, self.role, status
-        )
+        ):
+            effective_role = "tank"
+            effective_status = STATUS_MAIN
+            redirected = False
+            redirected_to_tank = True
+        else:
+            effective_status, redirected = resolve_requested_status(
+                raid, self.user_id, self.role, status
+            )
 
         await interaction.response.defer()
 
@@ -532,20 +557,22 @@ class StatusView(WizardView):
         self.bot.store.set_registration(
             self.raid_id,
             self.user_id,
-            role=self.role,
-            specializations=self.specs,
+            role=effective_role,
+            specializations=effective_specs,
             display_name=str(display_name),
             status=effective_status,
+            converted_from_dd=redirected_to_tank,
         )
 
         await refresh_raid_panel(self.bot, self.raid_id)
 
         done = build_done_embed(
             raid=raid,
-            role=self.role,
-            specs=self.specs,
+            role=effective_role,
+            specs=effective_specs,
             status=effective_status,
             redirected=redirected,
+            redirected_to_tank=redirected_to_tank,
         )
         done_view = RegistrationDoneView(self.bot, self.raid_id, self.user_id)
         await interaction.edit_original_response(embed=done, view=done_view)
@@ -602,10 +629,18 @@ def build_done_embed(
     specs: list[dict[str, Any]],
     status: str,
     redirected: bool,
+    redirected_to_tank: bool = False,
 ) -> discord.Embed:
     role_emoji = str(raid.get("role_emojis", {}).get(role, "")).strip()
 
-    if status == STATUS_MAIN:
+    if redirected_to_tank:
+        title = "Вы добавлены в Танк"
+        description = (
+            "Все места ДД заняты, поэтому вы зарегистрированы в роли "
+            "**Танк**. Выбранная ДД-специализация сохранена."
+        )
+        color = discord.Color.blue()
+    elif status == STATUS_MAIN:
         title = "Вы записаны в основной состав"
         description = "Ваша запись сохранена, эмбед рейда обновлён."
         color = discord.Color.green()

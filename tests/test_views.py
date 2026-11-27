@@ -138,6 +138,40 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         assert saved is not None
         self.assertEqual(saved["registrations"]["777"]["status"], STATUS_MAIN)
 
+    async def test_next_dd_becomes_tank_when_dd_is_full(self) -> None:
+        for user_id in range(1, 8):
+            self.store.set_registration(
+                self.raid["id"],
+                user_id,
+                role="dd",
+                specializations=[],
+                display_name=f"DD {user_id}",
+                status=STATUS_MAIN,
+            )
+        self.raid = self.store.get_raid(self.raid["id"])
+        assert self.raid is not None
+        dd_spec = self.store.specs_for_role(self.guild_id, "dd")[0]
+
+        view = StatusView(self.bot, self.raid["id"], 777, "dd", [dd_spec])
+        self.assertIn("Танк", view.build_embed(self.raid).description)
+        interaction = FakeInteraction()
+
+        with patch("raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)):
+            await view._set_status(interaction, status=STATUS_MAIN)
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        registration = saved["registrations"]["777"]
+        self.assertEqual(registration["role"], "tank")
+        self.assertEqual(registration["status"], STATUS_MAIN)
+        self.assertTrue(registration["converted_from_dd"])
+        self.assertEqual(
+            registration["specializations"][0]["id"], dd_spec["id"]
+        )
+        done_embed = interaction.edit_original_response.await_args.kwargs["embed"]
+        self.assertEqual(done_embed.title, "Вы добавлены в Танк")
+        self.assertIn("ДД-специализация сохранена", done_embed.description)
+
     async def test_dd_can_choose_single_specialization(self) -> None:
         view = SpecSelectView(self.bot, self.raid["id"], 777, "dd")
         selected_id = view.children[0].options[0].value

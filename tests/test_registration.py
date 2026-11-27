@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from raidbot.constants import STATUS_ABSENT, STATUS_BENCH, STATUS_MAIN
-from raidbot.registration import count_main_for_role, resolve_requested_status
+from raidbot.registration import (
+    count_main_for_role,
+    resolve_requested_status,
+    should_redirect_dd_to_tank,
+)
 
 
 def make_raid(registrations: dict | None = None, tank_limit: int = 2) -> dict:
@@ -73,6 +77,55 @@ class RegistrationTests(unittest.TestCase):
     def test_unknown_status_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             resolve_requested_status(make_raid(), "1", "tank", "maybe")
+
+    def test_full_dd_group_sends_next_dd_to_tank(self) -> None:
+        raid = {
+            "limits": {"tank": 1, "heal": 2, "dd": 7},
+            "registrations": {
+                str(user_id): {"status": STATUS_MAIN, "role": "dd"}
+                for user_id in range(1, 8)
+            },
+        }
+        self.assertTrue(
+            should_redirect_dd_to_tank(raid, "8", "dd", STATUS_MAIN)
+        )
+        self.assertFalse(
+            should_redirect_dd_to_tank(raid, "8", "dd", STATUS_BENCH)
+        )
+
+    def test_dd_overflow_is_not_repeated(self) -> None:
+        raid = {
+            "limits": {"tank": 2, "heal": 2, "dd": 7},
+            "registrations": {
+                **{
+                    str(user_id): {"status": STATUS_MAIN, "role": "dd"}
+                    for user_id in range(1, 8)
+                },
+                "100": {
+                    "status": STATUS_MAIN,
+                    "role": "tank",
+                    "converted_from_dd": True,
+                },
+            },
+        }
+        self.assertFalse(
+            should_redirect_dd_to_tank(raid, "8", "dd", STATUS_MAIN)
+        )
+
+    def test_dd_overflow_requires_free_tank_slot(self) -> None:
+        raid = {
+            "limits": {"tank": 1, "heal": 2, "dd": 7},
+            "registrations": {
+                **{
+                    str(user_id): {"status": STATUS_MAIN, "role": "dd"}
+                    for user_id in range(1, 8)
+                },
+                "100": {"status": STATUS_MAIN, "role": "tank"},
+            },
+        }
+        self.assertFalse(
+            should_redirect_dd_to_tank(raid, "8", "dd", STATUS_MAIN)
+        )
 
 
 if __name__ == "__main__":

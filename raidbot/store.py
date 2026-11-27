@@ -821,6 +821,7 @@ class Store:
         specializations: list[dict[str, str]],
         display_name: str,
         status: str,
+        converted_from_dd: bool = False,
     ) -> None:
         raid = self.data["raids"][raid_id]
         clean_specs = [
@@ -836,6 +837,7 @@ class Store:
             "specializations": clean_specs,
             "display_name": display_name,
             "status": status,
+            "converted_from_dd": bool(converted_from_dd),
             "updated_at": int(time.time()),
         }
         self._save()

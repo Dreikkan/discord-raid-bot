@@ -52,6 +52,43 @@ def count_main_for_role(raid: dict[str, Any], role: str, *, exclude_user_id: str
     return count
 
 
+def should_redirect_dd_to_tank(
+    raid: dict[str, Any],
+    user_id: str | int,
+    role: str,
+    requested_status: str,
+) -> bool:
+    """Return True when the next joining DD should take a free tank slot."""
+
+    if role != "dd" or requested_status != STATUS_MAIN:
+        return False
+
+    limits = raid.get("limits", {})
+    dd_limit = max(0, int(limits.get("dd", 0)))
+    tank_limit = max(0, int(limits.get("tank", 0)))
+    if tank_limit <= 0:
+        return False
+
+    dd_main = count_main_for_role(
+        raid, "dd", exclude_user_id=str(user_id)
+    )
+    if dd_main < dd_limit:
+        return False
+
+    # Only one overflow DD becomes a tank for a given raid.
+    for registration in raid.get("registrations", {}).values():
+        if (
+            registration.get("converted_from_dd")
+            and registration.get("status") == STATUS_MAIN
+        ):
+            return False
+
+    tank_main = count_main_for_role(
+        raid, "tank", exclude_user_id=str(user_id)
+    )
+    return tank_main < tank_limit
+
+
 def resolve_requested_status(
     raid: dict[str, Any],
     user_id: str | int,
