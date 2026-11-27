@@ -507,6 +507,14 @@ class GachaInventoryView(discord.ui.View):
             following.callback = self._next  # type: ignore[method-assign]
             self.add_item(following)
 
+        exchange = discord.ui.Button(
+            label="Обменять дубликаты",
+            emoji="♻️",
+            style=discord.ButtonStyle.success,
+        )
+        exchange.callback = self._exchange  # type: ignore[method-assign]
+        self.add_item(exchange)
+
         close = discord.ui.Button(
             label="Закрыть", style=discord.ButtonStyle.danger
         )
@@ -609,6 +617,13 @@ class GachaInventoryView(discord.ui.View):
         self.page += 1
         self._sync_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def _exchange(self, interaction: discord.Interaction) -> None:
+        from .gacha_exchange import send_exchange_view
+
+        await send_exchange_view(
+            self.bot, interaction, self.guild_id, self.user_id
+        )
 
     async def _close(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()

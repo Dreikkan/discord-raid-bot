@@ -14,6 +14,7 @@ from .constants import (
     DEFAULT_ROLE_EMOJIS,
     DEFAULT_TIMEZONE,
     DEFAULT_TITLE,
+    GACHA_EXCHANGE_VALUES,
     MAX_TITLE_LENGTH,
     ROLE_ORDER,
     STATUS_ABSENT,
@@ -468,6 +469,87 @@ class Store:
         profile["updated_at"] = int(time.time())
         self._save()
         return profile
+
+    def exchange_gacha_duplicates(
+        self,
+        guild_id: str | int,
+        user_id: str | int,
+        item_id: str,
+        quantity: int,
+    ) -> tuple[dict[str, Any], dict[str, Any], int, int]:
+        item = self.find_gacha_item(guild_id, item_id)
+        if item is None:
+            raise ValueError("Предмет не найден в пуле гачи.")
+        value = int(GACHA_EXCHANGE_VALUES.get(str(item.get("rarity")), 0))
+        if value <= 0:
+            raise ValueError("Для этого предмета обмен недоступен.")
+
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        key = str(item_id)
+        count = max(0, self._safe_int(profile["inventory"].get(key), 0))
+        max_quantity = max(0, count - 1)
+        quantity = int(quantity)
+        if quantity < 1 or quantity > max_quantity:
+            raise ValueError(
+                "Можно обменять только дубликаты: одна копия остаётся."
+            )
+
+        remaining = count - quantity
+        if remaining > 0:
+            profile["inventory"][key] = remaining
+        else:
+            profile["inventory"].pop(key, None)
+        gained = quantity * value
+        profile["balance"] += gained
+        profile["updated_at"] = int(time.time())
+        self._save()
+        return profile, item, quantity, gained
+
+    def exchange_all_gacha_duplicates(
+        self, guild_id: str | int, user_id: str | int
+    ) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
+        profile, _ = self._ensure_profile(guild_id, user_id)
+        settings = self.settings_for(guild_id)
+        items_by_id = {
+            str(item.get("id")): item
+            for item in settings.get("gacha_items", [])
+        }
+        total = 0
+        breakdown: list[dict[str, Any]] = []
+        for raw_item_id, raw_count in list(
+            profile["inventory"].items()
+        ):
+            item_id = str(raw_item_id)
+            count = max(0, self._safe_int(raw_count, 0))
+            if count <= 1:
+                continue
+            item = items_by_id.get(item_id)
+            if item is None:
+                continue
+            value = int(
+                GACHA_EXCHANGE_VALUES.get(str(item.get("rarity")), 0)
+            )
+            if value <= 0:
+                continue
+            quantity = count - 1
+            gained = quantity * value
+            profile["inventory"][item_id] = 1
+            total += gained
+            breakdown.append(
+                {
+                    "id": item_id,
+                    "name": str(item.get("name") or item_id),
+                    "quantity": quantity,
+                    "gained": gained,
+                }
+            )
+
+        if not breakdown:
+            return profile, 0, []
+        profile["balance"] += total
+        profile["updated_at"] = int(time.time())
+        self._save()
+        return profile, total, breakdown
 
     # ---------------------------------------------------- Activity rewards
 

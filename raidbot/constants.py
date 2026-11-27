@@ -58,6 +58,18 @@ GACHA_TEN_COST = 900
 GACHA_PITY = 80
 GACHA_CORE_PITY = 120
 
+# Exchange only duplicates: one copy of every item always stays in the
+# collection. The values are deliberately low: in a complete collection,
+# the long-run duplicate return is about 21 shards per pull, while a pull
+# costs 90-100 shards. This keeps the gacha a net currency sink.
+GACHA_EXCHANGE_VALUES: dict[str, int] = {
+    "common": 8,
+    "uncommon": 15,
+    "rare": 35,
+    "epic": 90,
+    "legendary": 250,
+}
+
 RAID_REWARD_MAIN = 50
 RAID_REWARD_BENCH = 15
 ACTIVITY_REWARD = 25
