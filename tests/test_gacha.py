@@ -35,6 +35,8 @@ from raidbot.gacha_roles import (
     role_rewards,
 )
 from raidbot.gacha_settings import (
+    GachaCurrencyAmountModal,
+    GachaCurrencyView,
     GachaItemImageSourceView,
     GachaItemImageUploadModal,
     GachaItemView,
@@ -438,6 +440,92 @@ class RoleRewardGrantTests(unittest.IsolatedAsyncioTestCase):
                 store.profile_for(1, 10)["role_rewards"], ["ludik"]
             )
 
+    async def test_higher_role_removes_previous_role(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            ludik = FakeRole(100, "Лудик")
+            gigacha = FakeRole(101, "Гигача")
+            member = SimpleNamespace(
+                id=10,
+                mention="<@10>",
+                roles=[ludik],
+                add_roles=AsyncMock(),
+                remove_roles=AsyncMock(),
+            )
+            guild = SimpleNamespace(
+                id=1,
+                roles=[ludik, gigacha],
+                get_member=lambda user_id: member,
+                me=SimpleNamespace(
+                    guild_permissions=SimpleNamespace(manage_roles=True),
+                    top_role=SimpleNamespace(position=10),
+                ),
+                create_role=AsyncMock(),
+            )
+            profile = store.profile_for(1, 10)
+            profile["total_pulls"] = 80
+            profile["role_rewards"] = ["ludik"]
+            store.save()
+
+            grants, errors = await claim_role_rewards(
+                bot, guild, 10, profile
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(grants[0].reward["id"], "gigacha")
+            member.add_roles.assert_awaited_once_with(
+                gigacha,
+                reason="Гача: награда за 80 круток",
+            )
+            member.remove_roles.assert_awaited_once_with(
+                ludik,
+                reason="Гача: заменена более высокой ролью",
+            )
+            self.assertEqual(
+                store.profile_for(1, 10)["role_rewards"],
+                ["ludik", "gigacha"],
+            )
+
+    async def test_open_cleans_old_role_without_new_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            ludik = FakeRole(100, "Лудик")
+            gigacha = FakeRole(101, "Гигача")
+            member = SimpleNamespace(
+                id=10,
+                mention="<@10>",
+                roles=[ludik, gigacha],
+                add_roles=AsyncMock(),
+                remove_roles=AsyncMock(),
+            )
+            guild = SimpleNamespace(
+                id=1,
+                roles=[ludik, gigacha],
+                get_member=lambda user_id: member,
+                me=SimpleNamespace(
+                    guild_permissions=SimpleNamespace(manage_roles=True),
+                    top_role=SimpleNamespace(position=10),
+                ),
+                create_role=AsyncMock(),
+            )
+            profile = store.profile_for(1, 10)
+            profile["total_pulls"] = 80
+            profile["role_rewards"] = ["ludik", "gigacha"]
+            store.save()
+
+            grants, errors = await claim_role_rewards(
+                bot, guild, 10, profile
+            )
+
+            self.assertEqual(grants, [])
+            self.assertEqual(errors, [])
+            member.remove_roles.assert_awaited_once_with(
+                ludik,
+                reason="Гача: заменена более высокой ролью",
+            )
+
 
 class GachaEmbedTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -473,11 +561,15 @@ class GachaEmbedTests(unittest.TestCase):
         self.assertIn("Крутить ×10", labels)
 
         pool = GachaPoolView(self.bot, 1)
-        self.assertEqual(pool.build_embed().title, "🎁 Предметы гачи")
+        self.assertEqual(pool.build_embed().title, "🎁 Настройки гачи")
         select = next(
             item for item in pool.children if isinstance(item, discord.ui.Select)
         )
         self.assertEqual(len(select.options), 24)
+        pool_labels = [
+            item.label for item in pool.children if hasattr(item, "label")
+        ]
+        self.assertIn("Начислить валюту", pool_labels)
 
         item_view = GachaItemView(self.bot, 1, "core-of-harmony")
         item_embed = item_view.build_embed()
@@ -537,6 +629,38 @@ class GachaEmbedTests(unittest.TestCase):
         self.assertEqual(
             announcement.image.url, "attachment://core-of-harmony.png"
         )
+
+
+class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_currency_view_and_award_modal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            view = GachaCurrencyView(bot, 1)
+            self.assertIn("Начисление", view.build_embed().title)
+
+            view.message = SimpleNamespace(id=1)
+            modal = GachaCurrencyAmountModal(
+                bot, 1, 10, "Игрок", view
+            )
+            modal.amount_input._value = "500"
+            response = SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            )
+            interaction = SimpleNamespace(
+                message=SimpleNamespace(id=1),
+                user=SimpleNamespace(id=999),
+                response=response,
+            )
+
+            await modal.on_submit(interaction)
+
+            self.assertEqual(store.profile_for(1, 10)["balance"], 500)
+            response.edit_message.assert_awaited_once()
+            embed = response.edit_message.await_args.kwargs["embed"]
+            self.assertIn("Начислено", embed.description)
+            self.assertIn("500", embed.description)
 
 
 class FakeAttachment:

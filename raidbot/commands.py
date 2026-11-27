@@ -7,7 +7,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .constants import ROLE_LABELS, ROLE_ORDER
+from .constants import (
+    ROLE_LABELS,
+    ROLE_ORDER,
+    SETTINGS_ADMIN_ROLE_IDS,
+)
 from .date_picker import RaidDatePickerView
 from .gacha_panel import GachaPanelView
 from .gacha_roles import claim_role_rewards, send_role_reward_notices
@@ -19,6 +23,17 @@ log = logging.getLogger(__name__)
 
 def admin_only(func: Any) -> Any:
     return app_commands.checks.has_permissions(manage_guild=True)(func)
+
+
+async def settings_admin_check(interaction: discord.Interaction) -> bool:
+    if interaction.guild is None:
+        return False
+    if interaction.user.id == interaction.guild.owner_id:
+        return True
+    return any(
+        role.id in SETTINGS_ADMIN_ROLE_IDS
+        for role in getattr(interaction.user, "roles", [])
+    )
 
 
 class RaidCog(commands.Cog):
@@ -105,11 +120,11 @@ class RaidCog(commands.Cog):
 
     @app_commands.command(
         name="настройки",
-        description="Открыть настройки рейда и напоминаний об активностях",
+        description="Открыть настройки рейда и гачи (только администраторы)",
     )
-    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
-    @admin_only
+    @app_commands.check(settings_admin_check)
     async def settings(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None:
             await interaction.response.send_message(

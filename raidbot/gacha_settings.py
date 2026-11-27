@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import discord
 
 from .constants import (
+    CURRENCY_EMOJI,
+    CURRENCY_NAME,
+    MAX_GACHA_CURRENCY_AWARD,
     MAX_GACHA_IMAGE_BYTES,
     MAX_GACHA_IMAGE_URL_LENGTH,
     MAX_GACHA_ITEM_DESCRIPTION_LENGTH,
@@ -23,6 +27,8 @@ from .gacha import (
     parse_rarity,
 )
 from .settings_panel import PANEL_COLOR, PanelView, SettingsView
+
+log = logging.getLogger(__name__)
 
 GACHA_POOL_PAGE_SIZE = 24
 
@@ -93,6 +99,15 @@ class GachaPoolView(PanelView):
         add.callback = self._add_item  # type: ignore[method-assign]
         self.add_item(add)
 
+        currency = discord.ui.Button(
+            label="Начислить валюту",
+            emoji="✨",
+            style=discord.ButtonStyle.success,
+            row=1,
+        )
+        currency.callback = self._open_currency  # type: ignore[method-assign]
+        self.add_item(currency)
+
         back = discord.ui.Button(
             label="Назад",
             style=discord.ButtonStyle.secondary,
@@ -124,11 +139,13 @@ class GachaPoolView(PanelView):
         ]
 
         embed = discord.Embed(
-            title="🎁 Предметы гачи",
+            title="🎁 Настройки гачи",
             description=(
                 f"Всего предметов: **{len(items)}**.\n"
                 "Выберите предмет в меню, чтобы изменить название, редкость, "
-                "описание, вес, картинку или анонс."
+                "описание, вес, картинку или анонс.\n\n"
+                "Кнопка **«Начислить валюту»** позволяет выдать игроку "
+                f"{CURRENCY_EMOJI} {CURRENCY_NAME}."
             ),
             color=PANEL_COLOR,
         )
@@ -188,10 +205,151 @@ class GachaPoolView(PanelView):
             AddGachaItemModal(self.bot, self.guild_id, self)
         )
 
+    async def _open_currency(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, GachaCurrencyView(self.bot, self.guild_id)
+        )
+
     async def _back(self, interaction: discord.Interaction) -> None:
         await self.show_view(
             interaction, SettingsView(self.bot, self.guild_id)
         )
+
+
+class GachaCurrencyView(PanelView):
+    def __init__(
+        self, bot: Any, guild_id: int, *, notice: str | None = None
+    ) -> None:
+        super().__init__(bot, guild_id)
+        self.notice = notice
+
+        select = discord.ui.UserSelect(
+            placeholder="Выберите пользователя",
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+        select.callback = self._on_user  # type: ignore[method-assign]
+        self.add_item(select)
+
+        back = discord.ui.Button(
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        back.callback = self._back  # type: ignore[method-assign]
+        self.add_item(back)
+
+    def build_embed(self) -> discord.Embed:
+        description = (
+            "Выберите пользователя, чтобы начислить ему "
+            f"{CURRENCY_EMOJI} **{CURRENCY_NAME}**.\n\n"
+            f"Максимум за одну операцию: **{MAX_GACHA_CURRENCY_AWARD:,}**."
+        )
+        if self.notice:
+            description = f"{self.notice}\n\n{description}"
+        return discord.Embed(
+            title="✨ Начисление осколков",
+            description=description.replace(",", " "),
+            color=PANEL_COLOR,
+        )
+
+    async def _on_user(self, interaction: discord.Interaction) -> None:
+        assert isinstance(interaction.data, dict)
+        values = interaction.data.get("values") or []
+        if not values:
+            return
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            await interaction.response.send_message(
+                "Сервер не найден.", ephemeral=True
+            )
+            return
+        member = guild.get_member(int(values[0]))
+        if member is None:
+            await interaction.response.send_message(
+                "Пользователь не найден на сервере.", ephemeral=True
+            )
+            return
+        if member.bot:
+            await interaction.response.send_message(
+                "Нельзя начислять валюту боту.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(
+            GachaCurrencyAmountModal(
+                self.bot,
+                self.guild_id,
+                member.id,
+                member.display_name,
+                self,
+            )
+        )
+
+    async def _back(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, GachaPoolView(self.bot, self.guild_id)
+        )
+
+
+class GachaCurrencyAmountModal(discord.ui.Modal):
+    def __init__(
+        self,
+        bot: Any,
+        guild_id: int,
+        target_id: int,
+        target_name: str,
+        parent: GachaCurrencyView,
+    ) -> None:
+        super().__init__(title="Начислить осколки")
+        self.bot = bot
+        self.guild_id = int(guild_id)
+        self.target_id = int(target_id)
+        self.parent_view = parent
+        self.amount_input = discord.ui.TextInput(
+            label="Сумма",
+            default="100",
+            placeholder=f"Для {target_name}"[:100],
+            max_length=7,
+            required=True,
+        )
+        self.add_item(self.amount_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            amount = int(self.amount_input.value)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Сумма должна быть целым числом.", ephemeral=True
+            )
+            return
+        if not 1 <= amount <= MAX_GACHA_CURRENCY_AWARD:
+            await interaction.response.send_message(
+                "❌ Сумма должна быть от 1 до "
+                f"{MAX_GACHA_CURRENCY_AWARD:,}.".replace(",", " "),
+                ephemeral=True,
+            )
+            return
+
+        profile = self.bot.store.add_currency(
+            self.guild_id, self.target_id, amount
+        )
+        log.info(
+            "Администратор %s начислил %s осколков пользователю %s",
+            interaction.user.id,
+            amount,
+            self.target_id,
+        )
+        new_view = GachaCurrencyView(
+            self.bot,
+            self.guild_id,
+            notice=(
+                f"✅ Начислено **{amount:,}** {CURRENCY_EMOJI} "
+                f"{CURRENCY_NAME} пользователю <@{self.target_id}>.\n"
+                f"Новый баланс: **{profile['balance']:,}**."
+            ).replace(",", " "),
+        )
+        await self.parent_view.show_view(interaction, new_view)
 
 
 class GachaItemView(PanelView):

@@ -115,7 +115,7 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
         value=(
             f"**Предметов в пуле:** {len(gacha_items)}\n"
             f"**Легендарных:** {legendary_count}\n"
-            "Пул и картинки настраиваются кнопкой ниже."
+            "Пул, картинки и начисление валюты — кнопкой ниже."
         ),
         inline=False,
     )
@@ -152,7 +152,7 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
     embed.set_footer(
         text=(
             "Выберите активность, откройте настройки рейда "
-            "или предметы гачи."
+            "или настройки гачи."
         )
     )
     return embed
@@ -312,7 +312,7 @@ class SettingsView(PanelView):
         self.add_item(add_button)
 
         gacha_button = discord.ui.Button(
-            label="Предметы гачи",
+            label="Настройки гачи",
             emoji="🎁",
             style=discord.ButtonStyle.secondary,
             row=button_row,

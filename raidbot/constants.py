@@ -68,6 +68,16 @@ MAX_GACHA_ITEM_DESCRIPTION_LENGTH = 500
 MAX_GACHA_ITEM_WEIGHT = 10000
 MAX_GACHA_IMAGE_URL_LENGTH = 500
 MAX_GACHA_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_GACHA_CURRENCY_AWARD = 1_000_000
+
+# /настройки is visible only to administrators and executable only by
+# members with these roles (the server owner is always allowed).
+SETTINGS_ADMIN_ROLE_IDS: tuple[int, ...] = (
+    1482718872959455283,
+    1565328621286199356,
+    1482721002894131330,
+    1482722108428779620,
+)
 
 WEEKDAY_LABELS: tuple[str, ...] = (
     "Понедельник",

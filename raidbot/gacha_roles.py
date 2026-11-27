@@ -290,18 +290,90 @@ async def _grant_role(
     return RoleGrant(reward=reward, role=role)
 
 
+def _member_role_ids(member: Any) -> set[int]:
+    return {
+        int(member_role.id)
+        for member_role in getattr(member, "roles", [])
+        if member_role.id
+    }
+
+
+def _highest_achieved_reward(
+    guild: Any, member: Any, profile: dict[str, Any]
+) -> dict[str, Any] | None:
+    claimed = {
+        str(reward_id)
+        for reward_id in profile.get("role_rewards", [])
+        if reward_id
+    }
+    member_role_ids = _member_role_ids(member)
+    highest: dict[str, Any] | None = None
+    for reward in role_rewards():
+        role = _role_by_name(guild, str(reward["name"]))
+        has_role = role is not None and int(role.id) in member_role_ids
+        if reward["id"] not in claimed and not has_role:
+            continue
+        if highest is None or reward["milestone"] > highest["milestone"]:
+            highest = reward
+    return highest
+
+
+async def _remove_lower_roles(
+    guild: Any, member: Any, highest: dict[str, Any]
+) -> tuple[list[str], list[str]]:
+    member_role_ids = _member_role_ids(member)
+    removed: list[str] = []
+    errors: list[str] = []
+    for reward in role_rewards():
+        if reward["milestone"] >= highest["milestone"]:
+            continue
+        role = _role_by_name(guild, str(reward["name"]))
+        if role is None or int(role.id) not in member_role_ids:
+            continue
+        if role.managed:
+            errors.append(
+                f"«{reward['name']}»: роль управляется интеграцией и не снимается."
+            )
+            continue
+        if not _can_manage_roles(guild):
+            errors.append(
+                f"«{reward['name']}»: у бота нет права «Manage Roles», "
+                "старая роль не снята."
+            )
+            continue
+        me = _bot_member(guild)
+        if me is None or me.top_role.position <= role.position:
+            errors.append(
+                f"«{reward['name']}»: роль выше роли бота, старая роль не снята."
+            )
+            continue
+        try:
+            await member.remove_roles(
+                role,
+                reason="Гача: заменена более высокой ролью",
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            errors.append(
+                f"«{reward['name']}»: не удалось снять старую роль."
+            )
+            continue
+        removed.append(str(role.name))
+    return removed, errors
+
+
 async def claim_role_rewards(
     bot: Any, guild: Any, user_id: int, profile: dict[str, Any]
 ) -> tuple[list[RoleGrant], list[str]]:
     pending = pending_role_rewards(profile)
-    if not pending:
-        return [], []
     if guild is None:
-        return [], ["Сервер не найден."]
+        return [], ["Сервер не найден."] if pending else []
 
     member = guild.get_member(int(user_id))
     if member is None:
-        return [], ["Пользователь не найден на сервере."]
+        return (
+            [],
+            ["Пользователь не найден на сервере."] if pending else [],
+        )
 
     grants: list[RoleGrant] = []
     errors: list[str] = []
@@ -326,6 +398,13 @@ async def claim_role_rewards(
             guild.id, user_id, str(reward["id"])
         )
         grants.append(grant)
+
+    highest = _highest_achieved_reward(guild, member, profile)
+    if highest is not None:
+        _, cleanup_errors = await _remove_lower_roles(
+            guild, member, highest
+        )
+        errors.extend(cleanup_errors)
 
     return grants, errors
 
