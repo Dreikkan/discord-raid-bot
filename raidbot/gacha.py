@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from .constants import (
+    GACHA_CORE_PITY,
     GACHA_PITY,
     MAX_GACHA_IMAGE_URL_LENGTH,
     MAX_GACHA_ITEM_DESCRIPTION_LENGTH,
@@ -24,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GACHA_ITEMS_PATH = PROJECT_ROOT / "config" / "gacha_items.json"
 GACHA_ASSETS_DIR = PROJECT_ROOT / "assets" / "gacha"
 GACHA_POOL_VERSION = 4
+CORE_ITEM_ID = "core-of-harmony"
 
 LEGACY_PLACEHOLDER_IDS: frozenset[str] = frozenset(
     {
@@ -145,6 +147,7 @@ class GachaError(ValueError):
 class RollResult:
     item: dict[str, Any]
     pity: bool = False
+    core_pity: bool = False
 
 
 def parse_rarity(value: str) -> str:
@@ -347,8 +350,9 @@ def roll_gacha(
     count: int,
     pity: int,
     *,
+    core_pity: int = 0,
     rng: Any | None = None,
-) -> tuple[list[RollResult], int]:
+) -> tuple[list[RollResult], int, int]:
     if count < 1:
         raise GachaError("Количество круток должно быть положительным.")
     pool = [item for item in items if isinstance(item, dict)]
@@ -357,9 +361,20 @@ def roll_gacha(
 
     random_source = rng or _RNG
     current_pity = max(0, int(pity))
+    current_core_pity = max(0, int(core_pity))
+    core_items = [
+        item for item in pool if str(item.get("id")) == CORE_ITEM_ID
+    ]
     results: list[RollResult] = []
 
     for _ in range(count):
+        if current_core_pity + 1 >= GACHA_CORE_PITY and core_items:
+            item = _pick_weighted(core_items, random_source)
+            results.append(RollResult(item=item, core_pity=True))
+            current_pity = 0
+            current_core_pity = 0
+            continue
+
         if current_pity + 1 >= GACHA_PITY:
             legendary = [
                 item for item in pool if item.get("rarity") == "legendary"
@@ -368,6 +383,11 @@ def roll_gacha(
                 item = _pick_weighted(legendary, random_source)
                 results.append(RollResult(item=item, pity=True))
                 current_pity = 0
+                current_core_pity = (
+                    0
+                    if str(item.get("id")) == CORE_ITEM_ID
+                    else current_core_pity + 1
+                )
                 continue
 
         rarity = _pick_rarity(pool, random_source)
@@ -380,8 +400,12 @@ def roll_gacha(
             current_pity = 0
         else:
             current_pity += 1
+        if str(item.get("id")) == CORE_ITEM_ID:
+            current_core_pity = 0
+        else:
+            current_core_pity += 1
 
-    return results, current_pity
+    return results, current_pity, current_core_pity
 
 
 def rarity_summary(results: Iterable[RollResult]) -> str:

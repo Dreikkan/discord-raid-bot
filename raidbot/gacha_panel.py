@@ -9,6 +9,7 @@ from .constants import (
     ACTIVITY_REWARD,
     CURRENCY_EMOJI,
     CURRENCY_NAME,
+    GACHA_CORE_PITY,
     GACHA_PITY,
     GACHA_SINGLE_COST,
     GACHA_TEN_COST,
@@ -51,6 +52,9 @@ def build_gacha_panel_embed(
     profile = store.profile_for(guild_id, user_id)
     items = settings.get("gacha_items", [])
     remaining = max(0, GACHA_PITY - int(profile.get("pity", 0)))
+    remaining_core = max(
+        0, GACHA_CORE_PITY - int(profile.get("core_pity", 0))
+    )
     legendary_names = [
         str(item.get("name"))
         for item in items
@@ -72,7 +76,8 @@ def build_gacha_panel_embed(
             f"**Баланс:** {CURRENCY_EMOJI} **{format_currency(profile['balance'])}** "
             f"{CURRENCY_NAME}\n"
             f"**Всего круток:** {profile['total_pulls']}\n"
-            f"**До гарантии:** {remaining} круток"
+            f"**До гарантии легендарки:** {remaining} круток\n"
+            f"**До гарантии «Ядра»:** {remaining_core} круток"
         ),
         color=GACHA_PANEL_COLOR,
     )
@@ -149,8 +154,12 @@ def build_gacha_result_embed(
     lines = [f"{rarity_emoji} **{rarity_label}**"]
     if description:
         lines.extend(("", description))
-    if result.pity:
-        lines.extend(("", "✨ **Сработала гарантия!**"))
+    if result.core_pity:
+        lines.extend(
+            ("", "✨ **Сработала гарантия «Ядра гармонии»!**")
+        )
+    elif result.pity:
+        lines.extend(("", "✨ **Сработала гарантия легендарки!**"))
 
     embed = discord.Embed(
         title=f"{rarity_emoji} {item.get('name', 'Награда')}",
@@ -168,9 +177,17 @@ def build_gacha_result_embed(
         inline=True,
     )
     remaining = max(0, GACHA_PITY - int(profile.get("pity", 0)))
+    remaining_core = max(
+        0, GACHA_CORE_PITY - int(profile.get("core_pity", 0))
+    )
     embed.add_field(
-        name="До гарантии",
+        name="До легендарки",
         value=f"{remaining} круток",
+        inline=True,
+    )
+    embed.add_field(
+        name="До «Ядра»",
+        value=f"{remaining_core} круток",
         inline=True,
     )
 
@@ -680,8 +697,11 @@ async def perform_gacha_pull(
         return
 
     try:
-        results, final_pity = roll_gacha(
-            items, count, int(profile.get("pity", 0))
+        results, final_pity, final_core_pity = roll_gacha(
+            items,
+            count,
+            int(profile.get("pity", 0)),
+            core_pity=int(profile.get("core_pity", 0)),
         )
         updated = bot.store.complete_gacha_pull(
             guild_id,
@@ -689,6 +709,7 @@ async def perform_gacha_pull(
             cost=cost,
             item_ids=[str(result.item["id"]) for result in results],
             pity=final_pity,
+            core_pity=final_core_pity,
         )
     except (GachaError, ValueError) as exc:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)

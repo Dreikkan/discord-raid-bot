@@ -99,15 +99,17 @@ class GachaRollTests(unittest.TestCase):
         self.items = gacha_item_defaults()
 
     def test_roll_returns_requested_count(self) -> None:
-        results, pity = roll_gacha(
+        results, pity, core_pity = roll_gacha(
             self.items, 10, 0, rng=random.Random(42)
         )
         self.assertEqual(len(results), 10)
         self.assertGreaterEqual(pity, 0)
         self.assertLessEqual(pity, 10)
+        self.assertGreaterEqual(core_pity, 0)
+        self.assertLessEqual(core_pity, 10)
 
     def test_pity_guarantees_legendary_at_threshold(self) -> None:
-        results, pity = roll_gacha(
+        results, pity, _ = roll_gacha(
             self.items, 1, 79, rng=random.Random(7)
         )
         self.assertEqual(len(results), 1)
@@ -119,12 +121,62 @@ class GachaRollTests(unittest.TestCase):
         legendary = next(
             item for item in self.items if item["rarity"] == "legendary"
         )
-        results, pity = roll_gacha(
+        results, pity, core_pity = roll_gacha(
             [legendary], 1, 12, rng=random.Random(1)
         )
         self.assertEqual(results[0].item["id"], legendary["id"])
         self.assertFalse(results[0].pity)
         self.assertEqual(pity, 0)
+        self.assertEqual(core_pity, 0)
+
+    def test_core_pity_guarantees_core_at_120(self) -> None:
+        results, pity, core_pity = roll_gacha(
+            self.items, 1, 0, core_pity=119, rng=random.Random(0)
+        )
+        self.assertEqual(results[0].item["id"], "core-of-harmony")
+        self.assertTrue(results[0].core_pity)
+        self.assertEqual(pity, 0)
+        self.assertEqual(core_pity, 0)
+
+    def test_core_pity_increments_without_core(self) -> None:
+        pool = [
+            item
+            for item in self.items
+            if item["id"] != "core-of-harmony"
+        ]
+        _, _, core_pity = roll_gacha(
+            pool, 10, 0, core_pity=5, rng=random.Random(2)
+        )
+        self.assertEqual(core_pity, 15)
+
+    def test_core_pity_resets_on_natural_core(self) -> None:
+        core = next(
+            item for item in self.items if item["id"] == "core-of-harmony"
+        )
+        results, _, core_pity = roll_gacha(
+            [core], 1, 0, core_pity=5, rng=random.Random(0)
+        )
+        self.assertEqual(results[0].item["id"], "core-of-harmony")
+        self.assertFalse(results[0].core_pity)
+        self.assertEqual(core_pity, 0)
+
+    def test_core_pity_in_ten_pull(self) -> None:
+        core = next(
+            item for item in self.items if item["id"] == "core-of-harmony"
+        )
+        common = next(
+            item for item in self.items if item["id"] == "griby"
+        )
+        results, _, core_pity = roll_gacha(
+            [core, common],
+            10,
+            0,
+            core_pity=119,
+            rng=random.Random(0),
+        )
+        self.assertEqual(results[0].item["id"], "core-of-harmony")
+        self.assertTrue(results[0].core_pity)
+        self.assertLessEqual(core_pity, 9)
 
     def test_empty_pool_is_rejected(self) -> None:
         with self.assertRaises(GachaError):
@@ -230,17 +282,20 @@ class GachaStoreTests(unittest.TestCase):
             cost=100,
             item_ids=["core-of-harmony", "griby"],
             pity=2,
+            core_pity=3,
         )
         self.assertEqual(profile["balance"], 400)
         self.assertEqual(profile["inventory"]["core-of-harmony"], 1)
         self.assertEqual(profile["inventory"]["griby"], 1)
         self.assertEqual(profile["pity"], 2)
+        self.assertEqual(profile["core_pity"], 3)
         self.assertEqual(profile["total_pulls"], 2)
 
         reloaded = Store(self.path)
         restored = reloaded.profile_for(1, 10)
         self.assertEqual(restored["balance"], 400)
         self.assertEqual(restored["inventory"]["core-of-harmony"], 1)
+        self.assertEqual(restored["core_pity"], 3)
 
     def test_activity_reward_is_idempotent_and_expires(self) -> None:
         self.store.register_activity_event(
@@ -551,7 +606,8 @@ class GachaEmbedTests(unittest.TestCase):
         embed = panel.build_embed()
         self.assertIn("Гача гармонии", embed.title)
         self.assertIn("Осколки гармонии", embed.description)
-        self.assertIn("До гарантии", embed.description)
+        self.assertIn("До гарантии легендарки", embed.description)
+        self.assertIn("До гарантии «Ядра»", embed.description)
         role_field = next(
             field
             for field in embed.fields
@@ -603,6 +659,12 @@ class GachaEmbedTests(unittest.TestCase):
         )
         self.assertEqual(embed.image.url, "attachment://core-of-harmony.png")
         self.assertIn("Сработала гарантия", embed.description)
+
+        core_guarantee = RollResult(self.core, core_pity=True)
+        core_embed = build_gacha_result_embed(
+            core_guarantee, profile=profile, page=0, total=1
+        )
+        self.assertIn("гарантия «Ядра гармонии»", core_embed.description)
 
         view = GachaResultView(self.bot, 1, 10, [result])
         self.assertEqual(

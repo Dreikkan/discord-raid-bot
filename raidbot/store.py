@@ -389,6 +389,7 @@ class Store:
             "balance": max(0, self._safe_int(raw.get("balance"), 0)),
             "inventory": inventory,
             "pity": max(0, self._safe_int(raw.get("pity"), 0)),
+            "core_pity": max(0, self._safe_int(raw.get("core_pity"), 0)),
             "total_pulls": max(
                 0, self._safe_int(raw.get("total_pulls"), 0)
             ),
@@ -440,6 +441,7 @@ class Store:
         cost: int,
         item_ids: list[str],
         pity: int,
+        core_pity: int = 0,
     ) -> dict[str, Any]:
         profile, _ = self._ensure_profile(guild_id, user_id)
         cost = int(cost)
@@ -461,6 +463,7 @@ class Store:
                 profile["inventory"].get(item_id, 0) + count
             )
         profile["pity"] = max(0, int(pity))
+        profile["core_pity"] = max(0, int(core_pity))
         profile["total_pulls"] += len(item_ids)
         profile["updated_at"] = int(time.time())
         self._save()
