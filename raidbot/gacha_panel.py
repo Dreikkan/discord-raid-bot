@@ -493,15 +493,50 @@ class GachaInventoryView(discord.ui.View):
         total_pages = max(1, (len(self.entries) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
         self.page = min(self.page, total_pages - 1)
         self.total_pages = total_pages
+        button_row = 1 if self.entries else 0
+
+        if self.entries:
+            start = self.page * self.PAGE_SIZE
+            options = [
+                discord.SelectOption(
+                    label=(
+                        f"{item.get('name', 'Награда')} ×{count}"
+                    )[:100],
+                    value=str(item["id"]),
+                    description=(
+                        f"{RARITY_LABELS.get(str(item.get('rarity') or 'common'), 'Обычная')} · "
+                        "открыть карточку"
+                    )[:100],
+                    emoji=RARITY_EMOJIS.get(
+                        str(item.get("rarity") or "common"), "⚪"
+                    ),
+                )
+                for item, count in self.entries[
+                    start : start + self.PAGE_SIZE
+                ]
+            ]
+            select = discord.ui.Select(
+                placeholder="Выберите предмет из коллекции",
+                options=options,
+                min_values=1,
+                max_values=1,
+                row=0,
+            )
+            select.callback = self._open_item  # type: ignore[method-assign]
+            self.add_item(select)
 
         if total_pages > 1:
             previous = discord.ui.Button(
-                label="◀", style=discord.ButtonStyle.secondary
+                label="◀",
+                style=discord.ButtonStyle.secondary,
+                row=button_row,
             )
             previous.callback = self._previous  # type: ignore[method-assign]
             self.add_item(previous)
             following = discord.ui.Button(
-                label="▶", style=discord.ButtonStyle.secondary
+                label="▶",
+                style=discord.ButtonStyle.secondary,
+                row=button_row,
             )
             following.callback = self._next  # type: ignore[method-assign]
             self.add_item(following)
@@ -510,12 +545,15 @@ class GachaInventoryView(discord.ui.View):
             label="Обменять дубликаты",
             emoji="♻️",
             style=discord.ButtonStyle.success,
+            row=button_row,
         )
         exchange.callback = self._exchange  # type: ignore[method-assign]
         self.add_item(exchange)
 
         close = discord.ui.Button(
-            label="Закрыть", style=discord.ButtonStyle.danger
+            label="Закрыть",
+            style=discord.ButtonStyle.danger,
+            row=button_row,
         )
         close.callback = self._close  # type: ignore[method-assign]
         self.add_item(close)
@@ -601,21 +639,72 @@ class GachaInventoryView(discord.ui.View):
         except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError):
             pass
 
+    async def _open_item(self, interaction: discord.Interaction) -> None:
+        assert isinstance(interaction.data, dict)
+        values = interaction.data.get("values") or []
+        if not values:
+            return
+        item_id = str(values[0])
+        entry = next(
+            (
+                (item, count)
+                for item, count in self.entries
+                if str(item.get("id")) == item_id
+            ),
+            None,
+        )
+        if entry is None:
+            await interaction.response.send_message(
+                "Предмет не найден в инвентаре.", ephemeral=True
+            )
+            return
+
+        self.stop()
+        new_view = GachaInventoryItemView(
+            self.bot,
+            self.guild_id,
+            self.user_id,
+            item_id,
+            page=self.page,
+        )
+        await interaction.response.edit_message(
+            embed=new_view.build_embed(),
+            view=new_view,
+            attachments=new_view.build_files(),
+        )
+        new_view.message = interaction.message
+
     async def _previous(self, interaction: discord.Interaction) -> None:
         if self.page <= 0:
             await interaction.response.defer()
             return
-        self.page -= 1
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        self.stop()
+        new_view = GachaInventoryView(
+            self.bot,
+            self.guild_id,
+            self.user_id,
+            page=self.page - 1,
+        )
+        await interaction.response.edit_message(
+            embed=new_view.build_embed(), view=new_view
+        )
+        new_view.message = interaction.message
 
     async def _next(self, interaction: discord.Interaction) -> None:
         if self.page >= self.total_pages - 1:
             await interaction.response.defer()
             return
-        self.page += 1
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        self.stop()
+        new_view = GachaInventoryView(
+            self.bot,
+            self.guild_id,
+            self.user_id,
+            page=self.page + 1,
+        )
+        await interaction.response.edit_message(
+            embed=new_view.build_embed(), view=new_view
+        )
+        new_view.message = interaction.message
 
     async def _exchange(self, interaction: discord.Interaction) -> None:
         from .gacha_exchange import send_exchange_view
@@ -631,6 +720,247 @@ class GachaInventoryView(discord.ui.View):
         try:
             await interaction.delete_original_response()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+
+def build_inventory_item_embed(
+    item: dict[str, Any], count: int
+) -> discord.Embed:
+    rarity = str(item.get("rarity") or "common")
+    embed = discord.Embed(
+        title=f"{RARITY_EMOJIS.get(rarity, '⚪')} {item.get('name', 'Награда')}",
+        description=(
+            str(item.get("description") or "").strip()
+            or "*Описание не задано.*"
+        ),
+        color=RARITY_COLORS.get(rarity, GACHA_PANEL_COLOR),
+    )
+    embed.add_field(
+        name="Редкость",
+        value=RARITY_LABELS.get(rarity, rarity),
+        inline=True,
+    )
+    embed.add_field(
+        name="В коллекции",
+        value=f"×{count}",
+        inline=True,
+    )
+    image_url, _ = image_reference(item)
+    if image_url:
+        embed.set_image(url=image_url)
+    embed.set_footer(text="Коллекция гачи · Нажмите «Поделиться»")
+    return embed
+
+
+def build_shared_item_embed(
+    item: dict[str, Any],
+    owner: Any,
+    count: int,
+    guild: discord.Guild | None = None,
+) -> discord.Embed:
+    rarity = str(item.get("rarity") or "common")
+    embed = discord.Embed(
+        title=f"{RARITY_EMOJIS.get(rarity, '⚪')} {item.get('name', 'Награда')}",
+        description=(
+            str(item.get("description") or "").strip()
+            or "*Предмет из коллекции гачи.*"
+        ),
+        color=RARITY_COLORS.get(rarity, GACHA_PANEL_COLOR),
+    )
+    embed.add_field(
+        name="Редкость",
+        value=RARITY_LABELS.get(rarity, rarity),
+        inline=True,
+    )
+    embed.add_field(
+        name="Владелец",
+        value=getattr(owner, "mention", str(owner)),
+        inline=True,
+    )
+    embed.add_field(
+        name="В коллекции",
+        value=f"×{count}",
+        inline=True,
+    )
+    image_url, _ = image_reference(item)
+    if image_url:
+        embed.set_image(url=image_url)
+    footer = "Коллекция гачи"
+    if guild is not None:
+        footer = f"{guild.name} · {footer}"
+    embed.set_footer(text=footer)
+    embed.timestamp = discord.utils.utcnow()
+    return embed
+
+
+class GachaInventoryItemView(discord.ui.View):
+    def __init__(
+        self,
+        bot: Any,
+        guild_id: int,
+        user_id: int,
+        item_id: str,
+        *,
+        page: int = 0,
+    ) -> None:
+        super().__init__(timeout=GACHA_RESULT_TIMEOUT)
+        self.bot = bot
+        self.guild_id = int(guild_id)
+        self.user_id = int(user_id)
+        self.item_id = str(item_id)
+        self.page = max(0, int(page))
+        self.message: discord.Message | None = None
+        item = self.item()
+        count = self.count()
+        share = discord.ui.Button(
+            label="Поделиться",
+            emoji="📣",
+            style=discord.ButtonStyle.success,
+            row=0,
+            disabled=item is None or count <= 0,
+        )
+        share.callback = self._share  # type: ignore[method-assign]
+        self.add_item(share)
+
+        back = discord.ui.Button(
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            row=0,
+        )
+        back.callback = self._back  # type: ignore[method-assign]
+        self.add_item(back)
+
+        close = discord.ui.Button(
+            label="Закрыть",
+            style=discord.ButtonStyle.danger,
+            row=0,
+        )
+        close.callback = self._close  # type: ignore[method-assign]
+        self.add_item(close)
+
+    def item(self) -> dict[str, Any] | None:
+        return self.bot.store.find_gacha_item(
+            self.guild_id, self.item_id
+        )
+
+    def count(self) -> int:
+        profile = self.bot.store.profile_for(
+            self.guild_id, self.user_id
+        )
+        return int(profile.get("inventory", {}).get(self.item_id, 0))
+
+    def build_embed(self) -> discord.Embed:
+        item = self.item()
+        if item is None:
+            return discord.Embed(
+                title="Предмет не найден",
+                description="Этот предмет удалён из пула гачи.",
+                color=discord.Color.red(),
+            )
+        return build_inventory_item_embed(item, self.count())
+
+    def build_files(self) -> list[discord.File]:
+        item = self.item()
+        if item is None:
+            return []
+        _, path = image_reference(item)
+        if path is None:
+            return []
+        return [discord.File(path, filename=path.name)]
+
+    async def _share(self, interaction: discord.Interaction) -> None:
+        item = self.item()
+        count = self.count()
+        if item is None:
+            await interaction.response.send_message(
+                "❌ Предмет удалён из пула гачи.", ephemeral=True
+            )
+            return
+        if count <= 0:
+            await interaction.response.send_message(
+                "❌ Этого предмета больше нет в вашей коллекции.",
+                ephemeral=True,
+            )
+            return
+        channel = interaction.channel
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ Не удалось определить канал.", ephemeral=True
+            )
+            return
+
+        embed = build_shared_item_embed(
+            item, interaction.user, count, interaction.guild
+        )
+        content = (
+            f"**{interaction.user.display_name}** делится предметом "
+            "из коллекции:"
+        )
+        allowed_mentions = discord.AllowedMentions(
+            everyone=False, roles=False, users=False, replied_user=False
+        )
+        _, path = image_reference(item)
+        try:
+            if path is not None:
+                await channel.send(
+                    content=content,
+                    embed=embed,
+                    file=discord.File(path, filename=path.name),
+                    allowed_mentions=allowed_mentions,
+                )
+            else:
+                await channel.send(
+                    content=content,
+                    embed=embed,
+                    allowed_mentions=allowed_mentions,
+                )
+        except (discord.DiscordException, ValueError, TypeError):
+            log.exception(
+                "Не удалось поделиться предметом %s", self.item_id
+            )
+            await interaction.response.send_message(
+                "❌ Не удалось опубликовать предмет в канал. "
+                "Проверьте права бота на отправку сообщений и вложений.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            "✅ Предмет опубликован в канал.", ephemeral=True
+        )
+
+    async def _back(self, interaction: discord.Interaction) -> None:
+        self.stop()
+        new_view = GachaInventoryView(
+            self.bot,
+            self.guild_id,
+            self.user_id,
+            page=self.page,
+        )
+        await interaction.response.edit_message(
+            embed=new_view.build_embed(),
+            view=new_view,
+            attachments=[],
+        )
+        new_view.message = interaction.message
+
+    async def _close(self, interaction: discord.Interaction) -> None:
+        self.stop()
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        try:
+            await interaction.delete_original_response()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        try:
+            await self.message.edit(view=self)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError):
             pass
 
 
