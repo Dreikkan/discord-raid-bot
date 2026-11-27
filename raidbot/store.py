@@ -20,7 +20,14 @@ from .constants import (
     STATUS_BENCH,
     STATUS_MAIN,
 )
-from .gacha import GachaError, gacha_item_defaults, normalize_item, normalize_items
+from .gacha import (
+    GACHA_POOL_VERSION,
+    GachaError,
+    LEGACY_PLACEHOLDER_IDS,
+    gacha_item_defaults,
+    normalize_item,
+    normalize_items,
+)
 
 _STORE_VERSION = 2
 _SETTINGS_VERSION = 3
@@ -36,6 +43,7 @@ def default_settings() -> dict[str, Any]:
         "specs": bundled_catalog(),
         "activities": activity_defaults(),
         "gacha_items": gacha_item_defaults(),
+        "gacha_pool_version": GACHA_POOL_VERSION,
     }
 
 
@@ -137,6 +145,32 @@ class Store:
         return activities
 
     @staticmethod
+    def _migrate_gacha_items(
+        existing: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Replace the old placeholder pool while keeping custom items."""
+
+        items = [
+            item
+            for item in existing
+            if item["id"] not in LEGACY_PLACEHOLDER_IDS
+            or item.get("image")
+            or item.get("image_url")
+            or item.get("announce")
+        ]
+        seen_ids = {item["id"] for item in items}
+        seen_names = {item["name"].casefold() for item in items}
+        for item in gacha_item_defaults():
+            if item["id"] in seen_ids:
+                continue
+            if item["name"].casefold() in seen_names:
+                continue
+            items.append(item)
+            seen_ids.add(item["id"])
+            seen_names.add(item["name"].casefold())
+        return items
+
+    @staticmethod
     def _normalize_settings(raw: Any) -> dict[str, Any]:
         settings = default_settings()
         if not isinstance(raw, dict):
@@ -169,11 +203,20 @@ class Store:
             raw.get("activities")
         )
 
+        try:
+            pool_version = int(raw.get("gacha_pool_version", 1))
+        except (TypeError, ValueError):
+            pool_version = 1
+
         raw_gacha_items = raw.get("gacha_items")
         if isinstance(raw_gacha_items, list):
-            settings["gacha_items"] = normalize_items(raw_gacha_items)
+            gacha_items = normalize_items(raw_gacha_items)
+            if pool_version < GACHA_POOL_VERSION:
+                gacha_items = Store._migrate_gacha_items(gacha_items)
+            settings["gacha_items"] = gacha_items
         else:
             settings["gacha_items"] = gacha_item_defaults()
+        settings["gacha_pool_version"] = GACHA_POOL_VERSION
         return settings
 
     def settings_for(self, guild_id: str | int) -> dict[str, Any]:

@@ -1,315 +1,311 @@
 {
-  "version": 1,
+  "version": 2,
   "items": [
-    {
-      "id": "smoldering-coal",
-      "name": "Тлеющий уголь",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Едва тёплый уголёк из старого горна."
-    },
-    {
-      "id": "stone-shard",
-      "name": "Осколок камня",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Простой камень, хранящий память о древних стенах."
-    },
-    {
-      "id": "rusty-coin",
-      "name": "Ржавая монета",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Монета неизвестного королевства. Уже не имеет ценности, но всё ещё блестит."
-    },
-    {
-      "id": "herb-bundle",
-      "name": "Пучок трав",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Скромные травы, собранные у лесной тропы."
-    },
-    {
-      "id": "flint",
-      "name": "Кремень",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Маленький, но надёжный спутник любого путешественника."
-    },
-    {
-      "id": "old-map",
-      "name": "Старая карта",
-      "rarity": "common",
-      "weight": 100,
-      "description": "На полях карты кто-то оставил загадочную отметку."
-    },
-    {
-      "id": "glass-marble",
-      "name": "Стеклянный шарик",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Внутри будто застыл крошечный мир."
-    },
-    {
-      "id": "bird-feather",
-      "name": "Пёрышко",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Лёгкое перо, пахнущее ветром."
-    },
-    {
-      "id": "amber-piece",
-      "name": "Кусочек янтаря",
-      "rarity": "common",
-      "weight": 100,
-      "description": "В янтаре навеки застыла искра солнечного света."
-    },
-    {
-      "id": "copper-key",
-      "name": "Медный ключ",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Открывает что-то очень старое. Или ничего."
-    },
-    {
-      "id": "clay-figurine",
-      "name": "Глиняная фигурка",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Неумело вылепленный зверёк с добрыми глазами."
-    },
-    {
-      "id": "dry-leaf",
-      "name": "Сухой лист",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Он всё ещё пахнет осенним лесом."
-    },
-    {
-      "id": "ribbon-scrap",
-      "name": "Обрывок ленты",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Кусочек чьего-то давно отшумевшего праздника."
-    },
-    {
-      "id": "stone-acorn",
-      "name": "Каменный жёлудь",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Тяжёлый, как сомнение, и гладкий, как время."
-    },
-    {
-      "id": "dusty-scroll",
-      "name": "Пыльный свиток",
-      "rarity": "common",
-      "weight": 100,
-      "description": "Записи почти выцвели, но печать ещё держится."
-    },
-    {
-      "id": "moonstone",
-      "name": "Лунный камень",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Светится ровным серебристым светом."
-    },
-    {
-      "id": "silver-leaf",
-      "name": "Серебряный лист",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Лист, который никогда не увядает."
-    },
-    {
-      "id": "dew-crystal",
-      "name": "Кристалл росы",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Внутри дрожит капля утренней росы."
-    },
-    {
-      "id": "obsidian-arrow",
-      "name": "Обсидиановая стрела",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Острый наконечник, выточенный из ночи."
-    },
-    {
-      "id": "griffin-feather",
-      "name": "Перо грифона",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Говорят, приносит удачу в дальних странствиях."
-    },
-    {
-      "id": "ether-flask",
-      "name": "Флакон эфира",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Туманное свечение внутри не гаснет."
-    },
-    {
-      "id": "wanderer-ring",
-      "name": "Кольцо странника",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "На внутренней стороне выгравированы имена городов."
-    },
-    {
-      "id": "mirror-scale",
-      "name": "Зеркальная чешуйка",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Отражает не то, что находится перед тобой."
-    },
-    {
-      "id": "emerald-spark",
-      "name": "Изумрудная искра",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Крошечная звезда, запутавшаяся в зелёном стекле."
-    },
-    {
-      "id": "wind-cloak",
-      "name": "Плащ ветра",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Ткань настолько лёгкая, что почти не имеет веса."
-    },
-    {
-      "id": "bone-amulet",
-      "name": "Костяной амулет",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Старый оберег, который всё ещё помнит своего владельца."
-    },
-    {
-      "id": "crystal-bell",
-      "name": "Хрустальный колокольчик",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Звенит так тихо, что его слышат только спящие."
-    },
-    {
-      "id": "sapphire-tear",
-      "name": "Сапфировая слеза",
-      "rarity": "uncommon",
-      "weight": 70,
-      "description": "Капля, в которой отразилось целое море."
-    },
-    {
-      "id": "phoenix-flame",
-      "name": "Пламя феникса",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Маленький огонёк, который не боится воды."
-    },
-    {
-      "id": "siren-tear",
-      "name": "Слеза сирены",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "В ней слышится далёкая песня моря."
-    },
-    {
-      "id": "dragon-fang",
-      "name": "Клык дракона",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Тёплый на ощупь, будто дракон ещё рядом."
-    },
-    {
-      "id": "book-of-shadows",
-      "name": "Книга теней",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Страницы шепчут, если долго слушать."
-    },
-    {
-      "id": "heart-of-forest",
-      "name": "Сердце леса",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Кусочек древесины, в котором бьётся жизнь."
-    },
-    {
-      "id": "stardust",
-      "name": "Звёздная пыль",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Пыльца, упавшая с ночного неба."
-    },
-    {
-      "id": "thorn-crown",
-      "name": "Корона из терний",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Тяжёлая ноша для того, кто осмелится её надеть."
-    },
-    {
-      "id": "phoenix-ash",
-      "name": "Пепел феникса",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Даже остывший, он хранит тепло нового начала."
-    },
-    {
-      "id": "ice-rose",
-      "name": "Ледяная роза",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Не тает в руках, но исчезает от горячего взгляда."
-    },
-    {
-      "id": "voice-of-abyss",
-      "name": "Голос бездны",
-      "rarity": "rare",
-      "weight": 40,
-      "description": "Раковина, в которой слышится зов далёких глубин."
-    },
-    {
-      "id": "eye-of-storm",
-      "name": "Око бури",
-      "rarity": "epic",
-      "weight": 15,
-      "description": "Внутри бушует ветер, но снаружи царит тишина."
-    },
-    {
-      "id": "void-mantle",
-      "name": "Мантия пустоты",
-      "rarity": "epic",
-      "weight": 15,
-      "description": "Ткань, в которой растворяется свет."
-    },
-    {
-      "id": "titan-blood",
-      "name": "Кровь титана",
-      "rarity": "epic",
-      "weight": 15,
-      "description": "Одна капля способна пробудить древнюю силу."
-    },
-    {
-      "id": "eternity-clock",
-      "name": "Часы вечности",
-      "rarity": "epic",
-      "weight": 15,
-      "description": "Их стрелки движутся лишь в моменты великих перемен."
-    },
-    {
-      "id": "storm-heart",
-      "name": "Сердце шторма",
-      "rarity": "epic",
-      "weight": 15,
-      "description": "Внутри него бьётся гром, запертый в кристалле."
-    },
     {
       "id": "core-of-harmony",
       "name": "Ядро гармонии",
       "rarity": "legendary",
-      "weight": 1,
+      "weight": 24,
       "description": "Легендарная награда, в которой пульсирует сама гармония мира. Говорят, ядро выбирает своего владельца само.",
       "image": "core-of-harmony.png",
       "announce": true
+    },
+    {
+      "id": "general-kinzhalov",
+      "name": "Генерал кинжалов",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "general-kinzhalov.png",
+      "announce": false
+    },
+    {
+      "id": "legendarnyy-melodichnyy-kamen",
+      "name": "Легендарный мелодичный камень",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "legendarnyy-melodichnyy-kamen.png",
+      "announce": false
+    },
+    {
+      "id": "polunochnyy-gryzun",
+      "name": "Полуночный грызун",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "polunochnyy-gryzun.png",
+      "announce": false
+    },
+    {
+      "id": "serebryannye-tsvety",
+      "name": "Серебряные цветы",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "serebryannye-tsvety.png",
+      "announce": false
+    },
+    {
+      "id": "sunduk-snaryazheniya",
+      "name": "Сундук снаряжения",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "sunduk-snaryazheniya.png",
+      "announce": false
+    },
+    {
+      "id": "terrakotovyy-kaban",
+      "name": "Терракотовый кабан",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "terrakotovyy-kaban.png",
+      "announce": false
+    },
+    {
+      "id": "ekho-busina",
+      "name": "Эхо бусина",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "ekho-busina.png",
+      "announce": false
+    },
+    {
+      "id": "ekho-nefrit",
+      "name": "Эхо нефрит",
+      "rarity": "legendary",
+      "weight": 9,
+      "description": "",
+      "image": "ekho-nefrit.png",
+      "announce": false
+    },
+    {
+      "id": "vodyanoy-vosk",
+      "name": "Водяной воск",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "vodyanoy-vosk.png",
+      "announce": false
+    },
+    {
+      "id": "doska",
+      "name": "Доска",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "doska.png",
+      "announce": false
+    },
+    {
+      "id": "kamen-perenastroyki",
+      "name": "Камень перенастройки",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "kamen-perenastroyki.png",
+      "announce": false
+    },
+    {
+      "id": "krasitel",
+      "name": "Краситель",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "krasitel.png",
+      "announce": false
+    },
+    {
+      "id": "nefritovyy-karp",
+      "name": "Нефритовый карп",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "nefritovyy-karp.png",
+      "announce": false
+    },
+    {
+      "id": "ognennaya-smazka",
+      "name": "Огненная смазка",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "ognennaya-smazka.png",
+      "announce": false
+    },
+    {
+      "id": "revushchaya-ruda",
+      "name": "Ревущая руда",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "revushchaya-ruda.png",
+      "announce": false
+    },
+    {
+      "id": "sunduk-proryva-misticheskikh-navykov",
+      "name": "Сундук прорыва мистических навыков",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "sunduk-proryva-misticheskikh-navykov.png",
+      "announce": false
+    },
+    {
+      "id": "sushchnost-yada",
+      "name": "Сущность яда",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "sushchnost-yada.png",
+      "announce": false
+    },
+    {
+      "id": "token-sokrovishch",
+      "name": "Токен сокровищ",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "token-sokrovishch.png",
+      "announce": false
+    },
+    {
+      "id": "torgovaya-moneta",
+      "name": "Торговая монета",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "torgovaya-moneta.png",
+      "announce": false
+    },
+    {
+      "id": "chernoye-zhelezo",
+      "name": "Чёрное железо",
+      "rarity": "epic",
+      "weight": 100,
+      "description": "",
+      "image": "chernoye-zhelezo.png",
+      "announce": false
+    },
+    {
+      "id": "bolshoy-kamen-nastroyki",
+      "name": "Большой камень настройки",
+      "rarity": "rare",
+      "weight": 100,
+      "description": "",
+      "image": "bolshoy-kamen-nastroyki.png",
+      "announce": false
+    },
+    {
+      "id": "rog-soobshcheniy",
+      "name": "Рог сообщений",
+      "rarity": "rare",
+      "weight": 100,
+      "description": "",
+      "image": "rog-soobshcheniy.png",
+      "announce": false
+    },
+    {
+      "id": "tykva-nagrad",
+      "name": "Тыква наград",
+      "rarity": "rare",
+      "weight": 100,
+      "description": "",
+      "image": "tykva-nagrad.png",
+      "announce": false
+    },
+    {
+      "id": "dushanskiy-nefrit",
+      "name": "Душаньский нефрит",
+      "rarity": "uncommon",
+      "weight": 100,
+      "description": "",
+      "image": "dushanskiy-nefrit.png",
+      "announce": false
+    },
+    {
+      "id": "malyy-kamen-nastroyki",
+      "name": "Малый камень настройки",
+      "rarity": "uncommon",
+      "weight": 100,
+      "description": "",
+      "image": "malyy-kamen-nastroyki.png",
+      "announce": false
+    },
+    {
+      "id": "obezyaniy-napitok",
+      "name": "Обезьяний напиток",
+      "rarity": "uncommon",
+      "weight": 100,
+      "description": "",
+      "image": "obezyaniy-napitok.png",
+      "announce": false
+    },
+    {
+      "id": "khogo",
+      "name": "Хого",
+      "rarity": "uncommon",
+      "weight": 100,
+      "description": "",
+      "image": "khogo.png",
+      "announce": false
+    },
+    {
+      "id": "griby",
+      "name": "Грибы",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "griby.png",
+      "announce": false
+    },
+    {
+      "id": "grubyy-mekh",
+      "name": "Грубый мех",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "grubyy-mekh.png",
+      "announce": false
+    },
+    {
+      "id": "derevyannaya-strela",
+      "name": "Деревянная стрела",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "derevyannaya-strela.png",
+      "announce": false
+    },
+    {
+      "id": "drevesina",
+      "name": "Древесина",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "drevesina.png",
+      "announce": false
+    },
+    {
+      "id": "otbornyy-kusok-myasa",
+      "name": "Отборный кусок мяса",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "otbornyy-kusok-myasa.png",
+      "announce": false
+    },
+    {
+      "id": "syraya-ruda",
+      "name": "Сырая руда",
+      "rarity": "common",
+      "weight": 100,
+      "description": "",
+      "image": "syraya-ruda.png",
+      "announce": false
     }
   ]
 }

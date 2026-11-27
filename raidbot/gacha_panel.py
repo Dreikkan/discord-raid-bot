@@ -50,6 +50,14 @@ def build_gacha_panel_embed(
         for item in items
         if item.get("rarity") == "legendary"
     ]
+    featured = next(
+        (
+            item
+            for item in items
+            if str(item.get("id")) == "core-of-harmony"
+        ),
+        None,
+    )
 
     embed = discord.Embed(
         title="🌟 Гача гармонии",
@@ -98,7 +106,9 @@ def build_gacha_panel_embed(
         )
 
     footer = "Гача гармонии"
-    if legendary_names:
+    if featured is not None:
+        footer += f" · Легендарная награда: {featured.get('name')}"
+    elif legendary_names:
         footer += f" · Легендарная награда: {legendary_names[0]}"
     embed.set_footer(text=footer)
     return embed
@@ -297,17 +307,28 @@ class GachaResultView(discord.ui.View):
         self.results = results
         if page is None:
             page = 0
-            best_rank = -1
-            for index, result in enumerate(results):
-                rarity = str(result.item.get("rarity") or "common")
-                rank = (
-                    RARITY_ORDER.index(rarity)
-                    if rarity in RARITY_ORDER
-                    else -1
-                )
-                if rank > best_rank:
-                    best_rank = rank
-                    page = index
+            core_index = next(
+                (
+                    index
+                    for index, result in enumerate(results)
+                    if str(result.item.get("id")) == "core-of-harmony"
+                ),
+                None,
+            )
+            if core_index is not None:
+                page = core_index
+            else:
+                best_rank = -1
+                for index, result in enumerate(results):
+                    rarity = str(result.item.get("rarity") or "common")
+                    rank = (
+                        RARITY_ORDER.index(rarity)
+                        if rarity in RARITY_ORDER
+                        else -1
+                    )
+                    if rank > best_rank:
+                        best_rank = rank
+                        page = index
         self.page = max(0, min(int(page), max(0, len(results) - 1)))
         self.message: discord.Message | None = None
 

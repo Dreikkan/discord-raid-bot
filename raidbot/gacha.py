@@ -23,6 +23,55 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GACHA_ITEMS_PATH = PROJECT_ROOT / "config" / "gacha_items.json"
 GACHA_ASSETS_DIR = PROJECT_ROOT / "assets" / "gacha"
+GACHA_POOL_VERSION = 2
+
+LEGACY_PLACEHOLDER_IDS: frozenset[str] = frozenset(
+    {
+        "smoldering-coal",
+        "stone-shard",
+        "rusty-coin",
+        "herb-bundle",
+        "flint",
+        "old-map",
+        "glass-marble",
+        "bird-feather",
+        "amber-piece",
+        "copper-key",
+        "clay-figurine",
+        "dry-leaf",
+        "ribbon-scrap",
+        "stone-acorn",
+        "dusty-scroll",
+        "moonstone",
+        "silver-leaf",
+        "dew-crystal",
+        "obsidian-arrow",
+        "griffin-feather",
+        "ether-flask",
+        "wanderer-ring",
+        "mirror-scale",
+        "emerald-spark",
+        "wind-cloak",
+        "bone-amulet",
+        "crystal-bell",
+        "sapphire-tear",
+        "phoenix-flame",
+        "siren-tear",
+        "dragon-fang",
+        "book-of-shadows",
+        "heart-of-forest",
+        "stardust",
+        "thorn-crown",
+        "phoenix-ash",
+        "ice-rose",
+        "voice-of-abyss",
+        "eye-of-storm",
+        "void-mantle",
+        "titan-blood",
+        "eternity-clock",
+        "storm-heart",
+    }
+)
 
 RARITY_ORDER: tuple[str, ...] = (
     "common",
@@ -53,11 +102,13 @@ RARITY_COLORS: dict[str, int] = {
     "legendary": 0xF1C40F,
 }
 RARITY_WEIGHTS: dict[str, int] = {
-    "common": 550,
-    "uncommon": 280,
+    "common": 500,
+    "uncommon": 260,
     "rare": 130,
-    "epic": 35,
-    "legendary": 5,
+    "epic": 90,
+    # 2% for all legendary items. The core has 24/96 of this bucket,
+    # so its base chance is exactly 0.5%.
+    "legendary": 20,
 }
 
 _RARITY_ALIASES: dict[str, str] = {

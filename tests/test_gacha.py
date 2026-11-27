@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ import discord
 
 from raidbot.gacha import (
     GachaError,
+    RARITY_WEIGHTS,
     RollResult,
     gacha_item_defaults,
     image_path,
@@ -45,12 +47,26 @@ class FakeBot:
 class GachaItemTests(unittest.TestCase):
     def test_default_pool_contains_legendary_core_with_image(self) -> None:
         items = gacha_item_defaults()
-        self.assertGreaterEqual(len(items), 40)
+        self.assertEqual(len(items), 34)
         core = next(item for item in items if item["id"] == "core-of-harmony")
         self.assertEqual(core["name"], "Ядро гармонии")
         self.assertEqual(core["rarity"], "legendary")
         self.assertTrue(core["announce"])
         self.assertIsNotNone(image_path(core))
+
+    def test_core_base_chance_is_half_a_percent(self) -> None:
+        items = gacha_item_defaults()
+        legendary = [
+            item for item in items if item["rarity"] == "legendary"
+        ]
+        core = next(item for item in legendary if item["id"] == "core-of-harmony")
+        rarity_chance = RARITY_WEIGHTS["legendary"] / sum(
+            RARITY_WEIGHTS.values()
+        )
+        item_chance = core["weight"] / sum(
+            item["weight"] for item in legendary
+        )
+        self.assertAlmostEqual(rarity_chance * item_chance, 0.005, places=6)
 
     def test_rarity_aliases_are_accepted(self) -> None:
         self.assertEqual(parse_rarity("легендарная"), "legendary")
@@ -115,6 +131,48 @@ class GachaStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_old_placeholder_pool_is_replaced_and_custom_items_survive(
+        self,
+    ) -> None:
+        old_data = {
+            "version": 2,
+            "guilds": {
+                "1": {
+                    "settings_version": 3,
+                    "gacha_items": [
+                        {
+                            "id": "smoldering-coal",
+                            "name": "Тлеющий уголь",
+                            "rarity": "common",
+                            "weight": 100,
+                        },
+                        {
+                            "id": "custom-item",
+                            "name": "Мой предмет",
+                            "rarity": "rare",
+                            "weight": 100,
+                        },
+                    ],
+                }
+            },
+            "raids": {},
+            "profiles": {},
+            "activity_events": {},
+        }
+        self.path.write_text(
+            json.dumps(old_data, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        store = Store(self.path)
+        settings = store.settings_for(1)
+        ids = {item["id"] for item in settings["gacha_items"]}
+        self.assertNotIn("smoldering-coal", ids)
+        self.assertIn("custom-item", ids)
+        self.assertIn("core-of-harmony", ids)
+        self.assertEqual(len(settings["gacha_items"]), 35)
+        self.assertEqual(settings["gacha_pool_version"], 2)
+
     def test_gacha_items_can_be_added_edited_and_deleted(self) -> None:
         saved = self.store.save_gacha_item(
             1,
@@ -144,12 +202,12 @@ class GachaStoreTests(unittest.TestCase):
             1,
             10,
             cost=100,
-            item_ids=["core-of-harmony", "smoldering-coal"],
+            item_ids=["core-of-harmony", "griby"],
             pity=2,
         )
         self.assertEqual(profile["balance"], 400)
         self.assertEqual(profile["inventory"]["core-of-harmony"], 1)
-        self.assertEqual(profile["inventory"]["smoldering-coal"], 1)
+        self.assertEqual(profile["inventory"]["griby"], 1)
         self.assertEqual(profile["pity"], 2)
         self.assertEqual(profile["total_pulls"], 2)
 
@@ -331,6 +389,16 @@ class GachaEmbedTests(unittest.TestCase):
         self.assertEqual(files[0].filename, "core-of-harmony.png")
         for file in files:
             file.close()
+
+        common = next(item for item in self.items if item["id"] == "griby")
+        multi_view = GachaResultView(
+            self.bot,
+            1,
+            10,
+            [RollResult(common), RollResult(self.core)],
+        )
+        self.assertEqual(multi_view.page, 1)
+        self.assertEqual(multi_view.current().item["id"], "core-of-harmony")
 
         user = SimpleNamespace(mention="<@10>")
         content = build_legendary_announcement_content(user, self.core)
