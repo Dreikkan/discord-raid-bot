@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from typing import Any
@@ -8,113 +9,105 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .activities import (
+    ActivityError,
+    format_schedules,
+    next_activity_occurrence,
+    parse_schedules,
+)
 from .constants import (
     MAX_REMINDER_DELETE_MINUTES,
     MAX_REMINDER_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
-    REMINDER_MINUTES,
     ROLE_LABELS,
     ROLE_ORDER,
-    WEEKDAY_LABELS,
 )
 from .date_picker import RaidDatePickerView
-from .time_utils import (
-    TimeInputError,
-    next_daily_event,
-    next_weekly_event,
-    parse_time_value,
-    parse_timezone,
-)
+from .time_utils import TimeInputError, parse_time_value, parse_timezone
 
 log = logging.getLogger(__name__)
-
-REMINDER_FREQUENCY_CHOICES = [
-    app_commands.Choice(name="Ежедневно", value="daily"),
-    app_commands.Choice(name="Еженедельно", value="weekly"),
-]
-REMINDER_WEEKDAY_CHOICES = [
-    app_commands.Choice(name=label, value=str(index))
-    for index, label in enumerate(WEEKDAY_LABELS)
-]
 
 
 def admin_only(func: Any) -> Any:
     return app_commands.checks.has_permissions(manage_guild=True)(func)
 
 
-def _next_reminder_times(
-    *,
-    frequency: str,
-    weekday: int | None,
-    time_value: Any,
-    timezone_text: str,
+def _activity_details(
+    activity: dict[str, Any],
+    settings: dict[str, Any],
     now: int,
-) -> tuple[int, int]:
-    if frequency == "daily":
-        event_at = next_daily_event(
-            time_value, timezone_text, after_ts=now
+) -> str:
+    schedules = activity.get("schedules", [])
+    channel_id = activity.get("channel_id")
+    role_id = activity.get("role_id")
+    active = bool(schedules and channel_id and role_id)
+
+    lines = [
+        f"**Расписание:** {format_schedules(schedules) if schedules else '—'}",
+        f"**Канал:** {f'<#{channel_id}>' if channel_id else 'не задан'}",
+        f"**Роль:** {f'<@&{role_id}>' if role_id else 'не задана'}",
+        f"**Автоудаление:** через {activity.get('delete_after_minutes', 60)} мин.",
+        f"**Статус:** {'активно' if active else 'не настроено'}",
+    ]
+
+    if active:
+        occurrence = next_activity_occurrence(
+            activity,
+            str(settings.get("timezone") or "UTC"),
+            after_ts=now,
         )
-    else:
-        if weekday is None:
-            raise TimeInputError("Для еженедельного напоминания выберите день недели.")
-        event_at = next_weekly_event(
-            weekday, time_value, timezone_text, after_ts=now
-        )
-
-    if event_at - REMINDER_MINUTES * 60 <= now:
-        if frequency == "daily":
-            event_at = next_daily_event(
-                time_value, timezone_text, after_ts=event_at
-            )
-        else:
-            event_at = next_weekly_event(
-                int(weekday), time_value, timezone_text, after_ts=event_at
+        if occurrence is not None:
+            start_at, _ = occurrence
+            lines.append(
+                f"**Ближайшее начало:** <t:{start_at}:F> · <t:{start_at}:R>"
             )
 
-    return event_at, event_at - REMINDER_MINUTES * 60
+    description = str(activity.get("description") or "").strip()
+    if description:
+        lines.extend(("", description))
+
+    value = "\n".join(lines)
+    return f"{value[:1023]}…" if len(value) > 1024 else value
 
 
-def _reminder_summary(reminder: dict[str, Any]) -> discord.Embed:
-    frequency = (
-        "Ежедневно"
-        if reminder.get("frequency") == "daily"
-        else "Еженедельно"
-    )
-    schedule = reminder.get("time", "—")
-    if reminder.get("frequency") == "weekly":
-        weekday = reminder.get("weekday")
-        if isinstance(weekday, int) and 0 <= weekday <= 6:
-            schedule = f"{WEEKDAY_LABELS[weekday]}, {schedule}"
-    delete_after = int(reminder.get("delete_after_minutes", 0))
-
+def _activity_overview(
+    activities: list[dict[str, Any]], settings: dict[str, Any]
+) -> discord.Embed:
+    now = int(time.time())
     embed = discord.Embed(
-        title="Напоминание настроено",
-        color=discord.Color.green(),
+        title="Активности",
+        description=(
+            "Отдельные напоминания, не связанные с эмбедом рейда.\n"
+            "Чтобы настроить, укажите название активности и нужные параметры."
+        ),
+        color=discord.Color.blurple(),
     )
-    embed.add_field(name="Частота", value=frequency, inline=True)
-    embed.add_field(
-        name="Время",
-        value=f"{schedule} ({reminder.get('timezone', '—')})",
-        inline=True,
+
+    for activity in activities[:25]:
+        embed.add_field(
+            name=str(activity["name"])[:256],
+            value=_activity_details(activity, settings, now),
+            inline=False,
+        )
+
+    if not activities:
+        embed.description = "Активности ещё не созданы."
+
+    embed.set_footer(
+        text="Пример: /активность название:Вечеринка канал:#ивенты роль:@Ивенты"
     )
-    embed.add_field(
-        name="Следующее напоминание",
-        value=f"<t:{reminder['next_fire_at']}:F> · <t:{reminder['next_fire_at']}:R>",
-        inline=False,
+    return embed
+
+
+def _single_activity_embed(
+    activity: dict[str, Any], settings: dict[str, Any]
+) -> discord.Embed:
+    now = int(time.time())
+    embed = discord.Embed(
+        title=str(activity["name"]),
+        description=_activity_details(activity, settings, now),
+        color=discord.Color.blurple(),
     )
-    embed.add_field(
-        name="Канал", value=f"<#{reminder['channel_id']}>", inline=True
-    )
-    embed.add_field(
-        name="Роль", value=f"<@&{reminder['role_id']}>", inline=True
-    )
-    embed.add_field(
-        name="Автоудаление", value=f"через {delete_after} мин.", inline=True
-    )
-    description = str(reminder.get("description") or "").strip() or "—"
-    if len(description) > 1024:
-        description = f"{description[:1023]}…"
-    embed.add_field(name="Описание", value=description, inline=False)
     return embed
 
 
@@ -295,47 +288,40 @@ class RaidCog(commands.Cog):
         )
 
     @app_commands.command(
-        name="напоминание",
-        description="Настроить ежедневное или еженедельное напоминание",
+        name="активность",
+        description="Настроить отдельное напоминание об активности",
     )
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.rename(
-        channel="канал",
-        frequency="частота",
-        weekday="день_недели",
-        time_value="время",
+        name="название",
         description="описание",
-        delete_after_minutes="удалить_через_минут",
+        channel="канал",
         role="роль",
-        disable="выключить",
+        schedule_text="расписание",
+        delete_after_minutes="удалить_через_минут",
     )
     @app_commands.describe(
-        channel="Канал, куда отправлять напоминание",
-        frequency="Ежедневное или еженедельное",
-        weekday="День недели для еженедельного напоминания",
-        time_value="Время начала в формате ЧЧ:ММ, например 20:30",
-        description="Текст перед напоминанием",
-        delete_after_minutes="Через сколько минут удалить сообщение (1–10080)",
+        name="Название активности (без параметров — показать все)",
+        description="Текст напоминания об активности",
+        channel="Канал для напоминаний",
         role="Роль, которую упомянуть перед напоминанием",
-        disable="Выключить настроенное напоминание",
-    )
-    @app_commands.choices(
-        frequency=REMINDER_FREQUENCY_CHOICES,
-        weekday=REMINDER_WEEKDAY_CHOICES,
+        schedule_text=(
+            "Например: «Вторник 20:00-22:00; Суббота 19:00-21:00» "
+            "или «Ежедневно 21:00-21:30»"
+        ),
+        delete_after_minutes="Через сколько минут удалить сообщение (1–10080)",
     )
     @admin_only
-    async def configure_reminder(
+    async def configure_activity(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
-        frequency: str | None = None,
-        weekday: str | None = None,
-        time_value: str | None = None,
+        name: str | None = None,
         description: str | None = None,
-        delete_after_minutes: int | None = None,
+        channel: discord.TextChannel | None = None,
         role: discord.Role | None = None,
-        disable: bool = False,
+        schedule_text: str | None = None,
+        delete_after_minutes: int | None = None,
     ) -> None:
         if interaction.guild is None:
             await interaction.response.send_message(
@@ -344,259 +330,130 @@ class RaidCog(commands.Cog):
             return
 
         settings = self.bot.store.settings_for(interaction.guild.id)
-        current = settings.get("reminder")
-        if not isinstance(current, dict):
-            current = None
+        activities = settings.get("activities", [])
+        has_config_values = any(
+            value is not None
+            for value in (
+                description,
+                channel,
+                role,
+                schedule_text,
+                delete_after_minutes,
+            )
+        )
 
-        provided = [
-            channel,
-            frequency,
-            weekday,
-            time_value,
-            description,
-            delete_after_minutes,
-            role,
-        ]
-        any_provided = any(value is not None for value in provided)
-
-        if disable:
-            if any_provided:
+        if name is None:
+            if has_config_values:
                 await interaction.response.send_message(
-                    "❌ Чтобы выключить напоминание, не передавайте другие параметры.",
+                    "❌ Укажите название активности.", ephemeral=True
+                )
+                return
+            await interaction.response.send_message(
+                embed=_activity_overview(activities, settings),
+                ephemeral=True,
+            )
+            return
+
+        current = self.bot.store.find_activity(interaction.guild.id, name)
+        if current is not None:
+            activity = copy.deepcopy(current)
+        else:
+            activity = {
+                "name": name.strip(),
+                "description": "",
+                "channel_id": None,
+                "role_id": None,
+                "delete_after_minutes": 60,
+                "schedules": [],
+                "last_sent_event_at": 0,
+            }
+
+        if current is not None and not has_config_values:
+            await interaction.response.send_message(
+                embed=_single_activity_embed(activity, settings),
+                ephemeral=True,
+            )
+            return
+
+        if current is None and schedule_text is None:
+            await interaction.response.send_message(
+                "❌ Для новой активности укажите расписание. Например:\n"
+                "`/активность название:Вечеринка расписание:\"Ежедневно 21:00-21:30\"`",
+                ephemeral=True,
+            )
+            return
+
+        if description is not None:
+            clean_description = description.strip()
+            if len(clean_description) > MAX_REMINDER_DESCRIPTION_LENGTH:
+                await interaction.response.send_message(
+                    "❌ Описание слишком длинное: максимум "
+                    f"{MAX_REMINDER_DESCRIPTION_LENGTH} символов.",
                     ephemeral=True,
                 )
                 return
-            if current is None:
-                await interaction.response.send_message(
-                    "Напоминание ещё не настроено.", ephemeral=True
-                )
-                return
+            activity["description"] = clean_description
 
-            self.bot.store.disable_reminder(interaction.guild.id)
-            await interaction.response.send_message(
-                "✅ Напоминание выключено.", ephemeral=True
-            )
-            return
+        if channel is not None:
+            if interaction.guild.me is not None:
+                permissions = channel.permissions_for(interaction.guild.me)
+                if not permissions.send_messages:
+                    await interaction.response.send_message(
+                        "❌ У бота нет прав на отправку сообщений в канале "
+                        f"{channel.mention}.",
+                        ephemeral=True,
+                    )
+                    return
+            activity["channel_id"] = channel.id
 
-        if not any_provided:
-            if current is not None:
-                await interaction.response.send_message(
-                    embed=_reminder_summary(current), ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "Напоминание ещё не настроено.\n"
-                    "Пример:\n"
-                    "`/напоминание канал:#рейды частота:Еженедельно "
-                    "день_недели:Среда время:20:30 описание:\"Через 15 минут "
-                    "начинается рейд\" удалить_через_минут:60 роль:@Рейд`",
-                    ephemeral=True,
-                )
-            return
+        if role is not None:
+            activity["role_id"] = role.id
 
-        if current is None:
-            missing = []
-            if channel is None:
-                missing.append("канал")
-            if frequency is None:
-                missing.append("частота")
-            if time_value is None:
-                missing.append("время")
-            if description is None:
-                missing.append("описание")
-            if delete_after_minutes is None:
-                missing.append("удалить_через_минут")
-            if role is None:
-                missing.append("роль")
-            if missing:
+        if delete_after_minutes is not None:
+            if not 1 <= delete_after_minutes <= MAX_REMINDER_DELETE_MINUTES:
                 await interaction.response.send_message(
-                    "❌ Для первого настройки укажите: "
-                    + ", ".join(f"`{name}`" for name in missing)
-                    + ".",
+                    "❌ Время автоудаления должно быть от 1 до "
+                    f"{MAX_REMINDER_DELETE_MINUTES} минут.",
                     ephemeral=True,
                 )
                 return
+            activity["delete_after_minutes"] = int(delete_after_minutes)
 
-        target_frequency = frequency or (
-            current["frequency"] if current is not None else None
-        )
-        if target_frequency not in {"daily", "weekly"}:
-            await interaction.response.send_message(
-                "❌ Укажите частоту: ежедневно или еженедельно.",
-                ephemeral=True,
-            )
-            return
-
-        if weekday is not None and target_frequency == "daily":
-            await interaction.response.send_message(
-                "❌ Для ежедневного напоминания день недели не нужен.",
-                ephemeral=True,
-            )
-            return
-
-        target_weekday: int | None = None
-        if target_frequency == "weekly":
-            if weekday is not None:
-                try:
-                    target_weekday = int(weekday)
-                except ValueError:
-                    target_weekday = None
-            elif current is not None and current.get("frequency") == "weekly":
-                target_weekday = int(current["weekday"])
-
-            if target_weekday is None or not 0 <= target_weekday <= 6:
-                await interaction.response.send_message(
-                    "❌ Для еженедельного напоминания выберите день недели.",
-                    ephemeral=True,
-                )
-                return
-
-        try:
-            target_time = (
-                parse_time_value(time_value)
-                if time_value is not None
-                else parse_time_value(str(current["time"]))
-            )
-        except (TimeInputError, KeyError, TypeError):
-            await interaction.response.send_message(
-                "❌ Укажите время в формате ЧЧ:ММ, например 20:30.",
-                ephemeral=True,
-            )
-            return
-
-        target_description = (
-            description.strip()
-            if description is not None
-            else (str(current.get("description", "")) if current else "")
-        )
-        if not target_description:
-            await interaction.response.send_message(
-                "❌ Добавьте описание напоминания.", ephemeral=True
-            )
-            return
-        if len(target_description) > MAX_REMINDER_DESCRIPTION_LENGTH:
-            await interaction.response.send_message(
-                "❌ Описание слишком длинное: максимум "
-                f"{MAX_REMINDER_DESCRIPTION_LENGTH} символов.",
-                ephemeral=True,
-            )
-            return
-
-        target_delete_after = (
-            delete_after_minutes
-            if delete_after_minutes is not None
-            else (int(current["delete_after_minutes"]) if current else None)
-        )
-        if target_delete_after is None or not 1 <= target_delete_after <= MAX_REMINDER_DELETE_MINUTES:
-            await interaction.response.send_message(
-                "❌ Время автоудаления должно быть от 1 до "
-                f"{MAX_REMINDER_DELETE_MINUTES} минут.",
-                ephemeral=True,
-            )
-            return
-
-        target_channel = channel
-        if target_channel is None and current is not None:
-            target_channel = interaction.guild.get_channel(
-                int(current["channel_id"])
-            )
-        if target_channel is None:
-            await interaction.response.send_message(
-                "❌ Выберите канал для напоминания.", ephemeral=True
-            )
-            return
-        if not isinstance(target_channel, discord.TextChannel):
-            await interaction.response.send_message(
-                "❌ Напоминание можно отправлять только в текстовый канал.",
-                ephemeral=True,
-            )
-            return
-        if interaction.guild.me is not None:
-            permissions = target_channel.permissions_for(interaction.guild.me)
-            if not permissions.send_messages:
-                await interaction.response.send_message(
-                    "❌ У бота нет прав на отправку сообщений в канале "
-                    f"{target_channel.mention}.",
-                    ephemeral=True,
-                )
-                return
-
-        target_role = role
-        if target_role is None and current is not None:
-            target_role = interaction.guild.get_role(int(current["role_id"]))
-        if target_role is None:
-            await interaction.response.send_message(
-                "❌ Выберите роль для упоминания.", ephemeral=True
-            )
-            return
-
-        schedule_changed = (
-            current is None
-            or frequency is not None
-            or weekday is not None
-            or time_value is not None
-        )
-        target_timezone = (
-            settings["timezone"]
-            if current is None or schedule_changed
-            else str(current.get("timezone") or settings["timezone"])
-        )
-        if schedule_changed:
+        if schedule_text is not None:
             try:
-                next_event_at, next_fire_at = _next_reminder_times(
-                    frequency=target_frequency,
-                    weekday=target_weekday,
-                    time_value=target_time,
-                    timezone_text=target_timezone,
-                    now=int(time.time()),
-                )
-            except TimeInputError as exc:
+                activity["schedules"] = parse_schedules(schedule_text)
+            except ActivityError as exc:
                 await interaction.response.send_message(
                     f"❌ {exc}", ephemeral=True
                 )
                 return
-        else:
-            next_event_at = int(current["next_event_at"])
-            next_fire_at = int(current["next_fire_at"])
-
-        reminder = {
-            "frequency": target_frequency,
-            "weekday": target_weekday,
-            "time": target_time.strftime("%H:%M"),
-            "timezone": target_timezone,
-            "channel_id": target_channel.id,
-            "delete_after_minutes": int(target_delete_after),
-            "role_id": target_role.id,
-            "description": target_description,
-            "next_event_at": next_event_at,
-            "next_fire_at": next_fire_at,
-        }
+            activity["last_sent_event_at"] = 0
 
         try:
-            saved = self.bot.store.set_reminder_config(
-                interaction.guild.id, reminder
+            saved = self.bot.store.save_activity(
+                interaction.guild.id, activity
             )
-        except ValueError:
+        except ActivityError as exc:
             await interaction.response.send_message(
-                "❌ Не удалось сохранить настройки напоминания.", ephemeral=True
+                f"❌ {exc}", ephemeral=True
             )
             return
 
-        warning = ""
-        if not target_role.mentionable:
-            warning = (
-                "\n⚠️ Роль не разрешена для упоминания в настройках сервера. "
+        warnings: list[str] = []
+        if not saved.get("channel_id") or not saved.get("role_id"):
+            warnings.append(
+                "Укажите канал и роль, иначе напоминание не отправляется."
+            )
+        if role is not None and not role.mentionable:
+            warnings.append(
+                "Роль не разрешена для упоминания в настройках сервера. "
                 "Пинг сработает только при наличии права «Mention @everyone, "
                 "@here and All Roles»."
             )
 
         await interaction.response.send_message(
-            content=(
-                "Также для этого сервера отключены отдельные персональные "
-                "напоминания по каждому рейду, чтобы не было дублей."
-                f"{warning}"
-            ),
-            embed=_reminder_summary(saved),
+            content="\n".join(f"⚠️ {warning}" for warning in warnings) or None,
+            embed=_single_activity_embed(saved, settings),
             ephemeral=True,
         )
 

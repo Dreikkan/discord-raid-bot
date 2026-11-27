@@ -7,6 +7,10 @@ from typing import Any
 
 import discord
 
+from .activities import (
+    activity_end_at,
+    next_activity_occurrence,
+)
 from .constants import (
     REMINDER_LOOP_SECONDS,
     REMINDER_MINUTES,
@@ -15,12 +19,6 @@ from .constants import (
     STATUS_MAIN,
 )
 from .text import escape_markdown
-from .time_utils import (
-    TimeInputError,
-    next_daily_event,
-    next_weekly_event,
-    parse_time_value,
-)
 
 log = logging.getLogger(__name__)
 
@@ -29,13 +27,13 @@ _MENTION_CHUNK_LIMIT = 1900
 
 
 class ReminderService:
-    """Weekly/daily configured reminders and legacy per-raid 15-minute pings."""
+    """Sends activity reminders and the 15-minute reminder for raid embeds."""
 
     def __init__(self, bot: Any) -> None:
         self.bot = bot
         self._task: asyncio.Task[None] | None = None
         self._last_attempt: dict[str, float] = {}
-        self._last_configured_attempt: dict[str, float] = {}
+        self._last_activity_attempt: dict[str, float] = {}
 
     def start(self) -> None:
         if self._task is None or self._task.done():
@@ -66,13 +64,11 @@ class ReminderService:
     async def check_due_reminders(self) -> None:
         now = int(time.time())
         await self._cleanup_expired_messages(now)
-        configured_guilds = await self.check_configured_reminders(now)
+        await self.check_activity_reminders(now)
 
         threshold = REMINDER_MINUTES * 60
 
         for raid in self.bot.store.all_raids():
-            if str(raid.get("guild_id")) in configured_guilds:
-                continue
             if raid.get("notification_sent_at"):
                 continue
 
@@ -92,88 +88,84 @@ class ReminderService:
                 self.bot.store.mark_notification_sent(raid_id, now)
                 self._last_attempt.pop(raid_id, None)
 
-    # -------------------------------------------------- Configured reminders
+    # ----------------------------------------------------------- Activities
 
-    async def check_configured_reminders(self, now: int) -> set[str]:
-        configured_guilds: set[str] = set()
-
+    async def check_activity_reminders(self, now: int) -> None:
         for guild_id in list(self.bot.store.data.get("guilds", {})):
             settings = self.bot.store.settings_for(guild_id)
-            reminder = settings.get("reminder")
-            if not isinstance(reminder, dict):
-                continue
+            timezone_text = str(settings.get("timezone") or "UTC")
+            activities = settings.get("activities", [])
 
-            configured_guilds.add(str(guild_id))
-            event_at = int(reminder.get("next_event_at", 0))
-            fire_at = int(reminder.get("next_fire_at", 0))
+            for activity in activities:
+                if activity.get("channel_id") is None:
+                    continue
+                if activity.get("role_id") is None:
+                    continue
+                if not activity.get("schedules"):
+                    continue
 
-            if event_at <= now:
-                self._advance_configured_reminder(guild_id, reminder, event_at)
-                continue
-            if now < fire_at:
-                continue
-
-            last_attempt = self._last_configured_attempt.get(str(guild_id), 0)
-            if now - last_attempt < REMINDER_RETRY_SECONDS:
-                continue
-            self._last_configured_attempt[str(guild_id)] = time.time()
-
-            if await self._send_configured_reminder(
-                guild_id, reminder, event_at
-            ):
-                self._advance_configured_reminder(guild_id, reminder, event_at)
-                self._last_configured_attempt.pop(str(guild_id), None)
-
-        return configured_guilds
-
-    def _advance_configured_reminder(
-        self,
-        guild_id: str,
-        reminder: dict[str, Any],
-        after_ts: int,
-    ) -> None:
-        try:
-            time_value = parse_time_value(str(reminder["time"]))
-            if reminder.get("frequency") == "daily":
-                next_event_at = next_daily_event(
-                    time_value,
-                    str(reminder["timezone"]),
-                    after_ts=after_ts,
+                last_sent_at = int(activity.get("last_sent_event_at", 0))
+                base_ts = max(now, last_sent_at)
+                occurrence = next_activity_occurrence(
+                    activity, timezone_text, after_ts=base_ts
                 )
-            else:
-                next_event_at = next_weekly_event(
-                    int(reminder["weekday"]),
-                    time_value,
-                    str(reminder["timezone"]),
-                    after_ts=after_ts,
-                )
-        except (KeyError, TypeError, ValueError, TimeInputError):
-            log.exception("Некорректные настройки напоминания сервера %s", guild_id)
-            return
+                if occurrence is None:
+                    continue
 
-        self.bot.store.advance_reminder(
-            guild_id,
-            next_event_at=next_event_at,
-            next_fire_at=next_event_at - REMINDER_MINUTES * 60,
-        )
+                start_at, schedule = occurrence
+                if now >= start_at:
+                    continue
+                if now < start_at - REMINDER_MINUTES * 60:
+                    continue
 
-    async def _send_configured_reminder(
+                activity_id = str(activity["id"])
+                key = f"{guild_id}:{activity_id}"
+                last_attempt = self._last_activity_attempt.get(key, 0)
+                if now - last_attempt < REMINDER_RETRY_SECONDS:
+                    continue
+                self._last_activity_attempt[key] = time.time()
+
+                if await self._send_activity_reminder(
+                    guild_id=guild_id,
+                    activity=activity,
+                    schedule=schedule,
+                    start_at=start_at,
+                    timezone_text=timezone_text,
+                ):
+                    self.bot.store.mark_activity_sent(
+                        guild_id, activity_id, start_at
+                    )
+                    self._last_activity_attempt.pop(key, None)
+
+    async def _send_activity_reminder(
         self,
+        *,
         guild_id: str,
-        reminder: dict[str, Any],
-        event_at: int,
+        activity: dict[str, Any],
+        schedule: dict[str, Any],
+        start_at: int,
+        timezone_text: str,
     ) -> bool:
         try:
-            channel_id = int(reminder["channel_id"])
+            channel_id = int(activity["channel_id"])
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
         except (discord.DiscordException, ValueError, TypeError):
-            log.exception("Не найден канал для напоминания сервера %s", guild_id)
+            log.exception(
+                "Не найден канал активности %s на сервере %s",
+                activity.get("id"),
+                guild_id,
+            )
             return False
 
-        role_id = int(reminder["role_id"])
-        description = str(reminder.get("description") or "").strip()
+        role_id = int(activity["role_id"])
+        description = str(activity.get("description") or "").strip()
+        name = escape_markdown(activity.get("name") or "Активность")
+        end_at = activity_end_at(schedule, timezone_text, start_at)
+        end_text = f"<t:{end_at}:t>"
+        if str(schedule.get("end", "")) <= str(schedule.get("start", "")):
+            end_text = f"{end_text} (<t:{end_at}:D>)"
 
         lines = [f"<@&{role_id}>"]
         if description:
@@ -181,40 +173,17 @@ class ReminderService:
         lines.extend(
             (
                 "",
-                f"⏰ **Напоминание о рейде**\n"
-                f"Начало: <t:{event_at}:t> · <t:{event_at}:R>",
+                f"⏰ **{name}** — через 15 минут",
+                f"Начало: <t:{start_at}:t> (<t:{start_at}:R>)",
+                f"Окончание: {end_text}",
             )
         )
 
-        matching_raid = self._find_matching_raid(guild_id, event_at)
-        if matching_raid is not None:
-            registrations = matching_raid.get("registrations", {})
-            main_ids = [
-                user_id
-                for user_id, registration in registrations.items()
-                if registration.get("status") == STATUS_MAIN
-            ]
-            bench_ids = [
-                user_id
-                for user_id, registration in registrations.items()
-                if registration.get("status") == STATUS_BENCH
-            ]
-            if main_ids or bench_ids:
-                main_text = " ".join(f"<@{user_id}>" for user_id in main_ids) or "—"
-                bench_text = " ".join(f"<@{user_id}>" for user_id in bench_ids) or "—"
-                lines.extend(
-                    (
-                        "",
-                        f"**Участники:** {main_text}",
-                        f"**Скамья запасных:** {bench_text}",
-                    )
-                )
-
         content = "\n".join(lines)
         allowed_mentions = discord.AllowedMentions(
-            everyone=False, roles=True, users=True, replied_user=False
+            everyone=False, roles=True, users=False, replied_user=False
         )
-        delete_after = int(reminder["delete_after_minutes"]) * 60
+        delete_after = int(activity["delete_after_minutes"]) * 60
         delete_at = int(time.time()) + delete_after
 
         try:
@@ -228,69 +197,20 @@ class ReminderService:
                     delete_at=delete_at,
                 )
         except (discord.DiscordException, ValueError, TypeError):
-            log.exception("Не удалось отправить напоминание сервера %s", guild_id)
+            log.exception(
+                "Не удалось отправить напоминание активности %s",
+                activity.get("id"),
+            )
             return False
 
         log.info(
-            "Напоминание сервера %s отправлено в канал %s",
-            guild_id,
+            "Напоминание активности %s отправлено в канал %s",
+            activity.get("name"),
             channel.id,
         )
         return True
 
-    def _find_matching_raid(
-        self, guild_id: str, event_at: int
-    ) -> dict[str, Any] | None:
-        candidates = [
-            raid
-            for raid in self.bot.store.all_raids()
-            if str(raid.get("guild_id")) == str(guild_id)
-            and abs(int(raid.get("start_at", 0)) - event_at) <= 300
-        ]
-        if not candidates:
-            return None
-        return min(
-            candidates,
-            key=lambda raid: abs(int(raid.get("start_at", 0)) - event_at),
-        )
-
-    @staticmethod
-    def _split_content(content: str, limit: int = _MENTION_CHUNK_LIMIT) -> list[str]:
-        chunks: list[str] = []
-        remaining = content
-
-        while len(remaining) > limit:
-            cut = remaining.rfind("\n", 0, limit)
-            if cut <= 0:
-                cut = remaining.rfind(" ", 0, limit)
-            if cut <= 0:
-                cut = limit
-            chunk = remaining[:cut].strip()
-            if chunk:
-                chunks.append(chunk)
-            remaining = remaining[cut:].lstrip()
-
-        if remaining.strip():
-            chunks.append(remaining.strip())
-
-        return chunks or [content]
-
-    async def _cleanup_expired_messages(self, now: int) -> None:
-        for item in self.bot.store.pop_due_deletions(now):
-            try:
-                channel_id = int(item["channel_id"])
-                message_id = int(item["message_id"])
-                channel = self.bot.get_channel(channel_id)
-                if channel is None:
-                    channel = await self.bot.fetch_channel(channel_id)
-                message = await channel.fetch_message(message_id)
-                await message.delete()
-            except (discord.NotFound, discord.Forbidden):
-                continue
-            except (discord.DiscordException, KeyError, ValueError, TypeError):
-                log.exception("Не удалось удалить сообщение напоминания")
-
-    # ------------------------------------------------------ Legacy reminders
+    # ------------------------------------------------------ Raid reminders
 
     async def _send_raid_reminder(self, raid: dict[str, Any]) -> bool:
         try:
@@ -380,3 +300,41 @@ class ReminderService:
 
         if current.strip():
             await channel.send(current, allowed_mentions=allowed_mentions)
+
+    # ------------------------------------------------------- Auto-deletions
+
+    @staticmethod
+    def _split_content(content: str, limit: int = _MENTION_CHUNK_LIMIT) -> list[str]:
+        chunks: list[str] = []
+        remaining = content
+
+        while len(remaining) > limit:
+            cut = remaining.rfind("\n", 0, limit)
+            if cut <= 0:
+                cut = remaining.rfind(" ", 0, limit)
+            if cut <= 0:
+                cut = limit
+            chunk = remaining[:cut].strip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[cut:].lstrip()
+
+        if remaining.strip():
+            chunks.append(remaining.strip())
+
+        return chunks or [content]
+
+    async def _cleanup_expired_messages(self, now: int) -> None:
+        for item in self.bot.store.pop_due_deletions(now):
+            try:
+                channel_id = int(item["channel_id"])
+                message_id = int(item["message_id"])
+                channel = self.bot.get_channel(channel_id)
+                if channel is None:
+                    channel = await self.bot.fetch_channel(channel_id)
+                message = await channel.fetch_message(message_id)
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden):
+                continue
+            except (discord.DiscordException, KeyError, ValueError, TypeError):
+                log.exception("Не удалось удалить сообщение напоминания")

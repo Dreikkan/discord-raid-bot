@@ -7,21 +7,19 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .activities import ActivityError, activity_defaults, normalize_activity
 from .catalog import bundled_catalog
 from .constants import (
     DEFAULT_LIMITS,
     DEFAULT_ROLE_EMOJIS,
     DEFAULT_TIMEZONE,
     DEFAULT_TITLE,
-    MAX_REMINDER_DELETE_MINUTES,
-    MAX_REMINDER_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
     ROLE_ORDER,
     STATUS_ABSENT,
     STATUS_BENCH,
     STATUS_MAIN,
 )
-from .time_utils import TimeInputError, parse_time_value, parse_timezone
 
 _STORE_VERSION = 1
 _SETTINGS_VERSION = 2
@@ -35,7 +33,7 @@ def default_settings() -> dict[str, Any]:
         "role_emojis": dict(DEFAULT_ROLE_EMOJIS),
         "timezone": DEFAULT_TIMEZONE,
         "specs": bundled_catalog(),
-        "reminder": None,
+        "activities": activity_defaults(),
     }
 
 
@@ -105,55 +103,30 @@ class Store:
     # ------------------------------------------------------------- Settings
 
     @staticmethod
-    def _normalize_reminder(raw: Any) -> dict[str, Any] | None:
-        if not isinstance(raw, dict):
-            return None
+    def _normalize_activities(raw: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw, list):
+            return activity_defaults()
 
-        frequency = str(raw.get("frequency", "")).strip()
-        if frequency not in {"daily", "weekly"}:
-            return None
+        activities: list[dict[str, Any]] = []
+        seen_names: set[str] = set()
+        seen_ids: set[str] = set()
 
-        try:
-            channel_id = int(raw["channel_id"])
-            role_id = int(raw["role_id"])
-            delete_after_minutes = int(raw["delete_after_minutes"])
-            next_event_at = int(raw["next_event_at"])
-            next_fire_at = int(raw["next_fire_at"])
-            time_value = parse_time_value(str(raw.get("time", "")))
-            timezone = parse_timezone(str(raw.get("timezone", "")))[0]
-        except (KeyError, TypeError, ValueError, TimeInputError):
-            return None
-
-        if not 1 <= delete_after_minutes <= MAX_REMINDER_DELETE_MINUTES:
-            return None
-        if next_event_at <= 0 or next_fire_at <= 0:
-            return None
-
-        weekday = None
-        if frequency == "weekly":
+        for item in raw:
             try:
-                weekday = int(raw["weekday"])
-            except (KeyError, TypeError, ValueError):
-                return None
-            if not 0 <= weekday <= 6:
-                return None
+                activity = normalize_activity(item)
+            except ActivityError:
+                continue
 
-        description = str(raw.get("description", "")).strip()
-        if len(description) > MAX_REMINDER_DESCRIPTION_LENGTH:
-            description = description[:MAX_REMINDER_DESCRIPTION_LENGTH]
+            if activity["name"].casefold() in seen_names:
+                continue
+            if activity["id"] in seen_ids:
+                continue
 
-        return {
-            "frequency": frequency,
-            "weekday": weekday,
-            "time": time_value.strftime("%H:%M"),
-            "timezone": timezone,
-            "channel_id": channel_id,
-            "delete_after_minutes": delete_after_minutes,
-            "role_id": role_id,
-            "description": description,
-            "next_event_at": next_event_at,
-            "next_fire_at": next_fire_at,
-        }
+            seen_names.add(activity["name"].casefold())
+            seen_ids.add(activity["id"])
+            activities.append(activity)
+
+        return activities
 
     @staticmethod
     def _normalize_settings(raw: Any) -> dict[str, Any]:
@@ -184,7 +157,9 @@ class Store:
         if isinstance(timezone, str) and timezone.strip():
             settings["timezone"] = timezone.strip()
 
-        settings["reminder"] = Store._normalize_reminder(raw.get("reminder"))
+        settings["activities"] = Store._normalize_activities(
+            raw.get("activities")
+        )
         return settings
 
     def settings_for(self, guild_id: str | int) -> dict[str, Any]:
@@ -212,37 +187,45 @@ class Store:
         settings["timezone"] = timezone
         self._save()
 
-    def set_reminder_config(
-        self, guild_id: str | int, reminder: dict[str, Any]
-    ) -> dict[str, Any]:
-        normalized = self._normalize_reminder(reminder)
-        if normalized is None:
-            raise ValueError("Некорректные настройки напоминания.")
+    def find_activity(
+        self, guild_id: str | int, name: str
+    ) -> dict[str, Any] | None:
+        folded = name.strip().casefold()
+        for activity in self.settings_for(guild_id).get("activities", []):
+            if activity["name"].casefold() == folded:
+                return activity
+        return None
 
+    def save_activity(
+        self, guild_id: str | int, activity: dict[str, Any]
+    ) -> dict[str, Any]:
+        normalized = normalize_activity(activity)
         settings = self.settings_for(guild_id)
-        settings["reminder"] = normalized
+
+        for index, existing in enumerate(settings["activities"]):
+            if existing["id"] == normalized["id"]:
+                settings["activities"][index] = normalized
+                self._save()
+                return normalized
+
+        folded = normalized["name"].casefold()
+        for existing in settings["activities"]:
+            if existing["name"].casefold() == folded:
+                raise ActivityError("Активность с таким названием уже существует.")
+
+        settings["activities"].append(normalized)
         self._save()
         return normalized
 
-    def disable_reminder(self, guild_id: str | int) -> None:
-        settings = self.settings_for(guild_id)
-        settings["reminder"] = None
-        self._save()
-
-    def advance_reminder(
-        self,
-        guild_id: str | int,
-        *,
-        next_event_at: int,
-        next_fire_at: int,
+    def mark_activity_sent(
+        self, guild_id: str | int, activity_id: str, event_at: int
     ) -> None:
         settings = self.settings_for(guild_id)
-        reminder = settings.get("reminder")
-        if not isinstance(reminder, dict):
-            return
-        reminder["next_event_at"] = int(next_event_at)
-        reminder["next_fire_at"] = int(next_fire_at)
-        self._save()
+        for activity in settings.get("activities", []):
+            if activity["id"] == activity_id:
+                activity["last_sent_event_at"] = int(event_at)
+                self._save()
+                return
 
     # ------------------------------------------------------- Auto-deletions
 

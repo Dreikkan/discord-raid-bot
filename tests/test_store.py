@@ -24,7 +24,17 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(settings["limits"], {"tank": 1, "heal": 2, "dd": 7})
         self.assertEqual(len(settings["specs"]), 12)
         self.assertTrue(all(spec["emoji"].startswith("<:") for spec in settings["specs"]))
-        self.assertIsNone(settings["reminder"])
+        self.assertEqual(len(settings["activities"]), 4)
+        party = next(
+            activity
+            for activity in settings["activities"]
+            if activity["name"] == "Вечеринка"
+        )
+        self.assertEqual(
+            party["schedules"],
+            [{"weekday": None, "start": "21:00", "end": "21:30"}],
+        )
+        self.assertIsNone(party["channel_id"])
 
         self.store.set_title(123, "Новый рейд")
         self.store.set_limits(123, {"tank": 1, "heal": 2, "dd": 3})
@@ -37,41 +47,30 @@ class StoreTests(unittest.TestCase):
         )
         self.assertEqual(reloaded.settings_for(123)["timezone"], "UTC+03:00")
 
-    def test_reminder_config_persists_and_can_be_disabled(self) -> None:
-        reminder = {
-            "frequency": "weekly",
-            "weekday": 2,
-            "time": "20:30",
-            "timezone": "Europe/Moscow",
-            "channel_id": 10,
-            "delete_after_minutes": 60,
-            "role_id": 20,
-            "description": "Сбор за 15 минут.",
-            "next_event_at": 2_000_000_000,
-            "next_fire_at": 2_000_000_000 - 900,
-        }
-        saved = self.store.set_reminder_config(123, reminder)
-        self.assertEqual(saved["frequency"], "weekly")
-        self.assertEqual(saved["weekday"], 2)
-        self.assertEqual(saved["time"], "20:30")
+    def test_activity_config_persists_and_can_be_marked_sent(self) -> None:
+        settings = self.store.settings_for(123)
+        party = next(
+            activity
+            for activity in settings["activities"]
+            if activity["name"] == "Вечеринка"
+        )
+        party["channel_id"] = 10
+        party["role_id"] = 20
+        party["description"] = "Скоро начало."
+        saved = self.store.save_activity(123, party)
+        self.assertEqual(saved["description"], "Скоро начало.")
 
+        self.store.mark_activity_sent(123, saved["id"], 2_000_000_000)
         reloaded = Store(self.path)
-        restored = reloaded.settings_for(123)["reminder"]
-        self.assertIsNotNone(restored)
-        assert restored is not None
-        self.assertEqual(restored["description"], "Сбор за 15 минут.")
+        restored = next(
+            activity
+            for activity in reloaded.settings_for(123)["activities"]
+            if activity["id"] == saved["id"]
+        )
+        self.assertEqual(restored["channel_id"], 10)
         self.assertEqual(restored["role_id"], 20)
-
-        reloaded.advance_reminder(
-            123, next_event_at=2_000_604_800, next_fire_at=2_000_603_900
-        )
-        self.assertEqual(
-            reloaded.settings_for(123)["reminder"]["next_fire_at"],
-            2_000_603_900,
-        )
-
-        reloaded.disable_reminder(123)
-        self.assertIsNone(Store(self.path).settings_for(123)["reminder"])
+        self.assertEqual(restored["description"], "Скоро начало.")
+        self.assertEqual(restored["last_sent_event_at"], 2_000_000_000)
 
     def test_auto_delete_queue_persists_and_returns_due_messages(self) -> None:
         self.store.schedule_message_deletion(
