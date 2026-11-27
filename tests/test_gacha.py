@@ -707,6 +707,12 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             bot = FakeBot(store)
             view = GachaCurrencyView(bot, 1)
             self.assertIn("Начисление", view.build_embed().title)
+            labels = [
+                item.label
+                for item in view.children
+                if hasattr(item, "label")
+            ]
+            self.assertIn("Выдать всем", labels)
 
             view.message = SimpleNamespace(id=1)
             modal = GachaCurrencyAmountModal(
@@ -730,6 +736,46 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             embed = response.edit_message.await_args.kwargs["embed"]
             self.assertIn("Начислено", embed.description)
             self.assertIn("500", embed.description)
+
+    async def test_award_to_all_known_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            for user_id in (10, 11, 12):
+                store.add_currency(1, user_id, 0)
+
+            view = GachaCurrencyView(bot, 1)
+            self.assertEqual(view.all_recipient_ids(), [10, 11, 12])
+            view.message = SimpleNamespace(id=1)
+            modal = GachaCurrencyAmountModal(
+                bot,
+                1,
+                0,
+                "всем участникам",
+                view,
+                all_members=True,
+            )
+            modal.amount_input._value = "250"
+            response = SimpleNamespace(
+                edit_message=AsyncMock(),
+                send_message=AsyncMock(),
+            )
+            interaction = SimpleNamespace(
+                message=SimpleNamespace(id=1),
+                user=SimpleNamespace(id=999),
+                response=response,
+            )
+
+            await modal.on_submit(interaction)
+
+            for user_id in (10, 11, 12):
+                self.assertEqual(
+                    store.profile_for(1, user_id)["balance"], 250
+                )
+            response.edit_message.assert_awaited_once()
+            embed = response.edit_message.await_args.kwargs["embed"]
+            self.assertIn("3", embed.description)
+            self.assertIn("750", embed.description)
 
 
 class GachaCloseTests(unittest.IsolatedAsyncioTestCase):

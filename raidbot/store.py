@@ -420,6 +420,35 @@ class Store:
         self._save()
         return profile
 
+    def gacha_profile_ids(self, guild_id: str | int) -> list[str]:
+        profiles = self.data.get("profiles", {}).get(str(guild_id), {})
+        return [str(user_id) for user_id in profiles]
+
+    def add_currency_to_users(
+        self,
+        guild_id: str | int,
+        user_ids: list[str | int],
+        amount: int,
+    ) -> int:
+        amount = int(amount)
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной.")
+        updated = 0
+        seen: set[str] = set()
+        now = int(time.time())
+        for user_id in user_ids:
+            key = str(user_id)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            profile, _ = self._ensure_profile(guild_id, key)
+            profile["balance"] = max(0, profile["balance"] + amount)
+            profile["updated_at"] = now
+            updated += 1
+        if updated:
+            self._save()
+        return updated
+
     def mark_role_reward(
         self,
         guild_id: str | int,
