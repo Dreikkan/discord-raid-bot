@@ -294,12 +294,10 @@ class GachaExchangeView(discord.ui.View):
 
     async def _close(self, interaction: discord.Interaction) -> None:
         self.stop()
-        await interaction.response.defer()
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         try:
-            if interaction.message is not None:
-                await interaction.message.delete()
-            else:
-                await interaction.delete_original_response()
+            await interaction.delete_original_response()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
 

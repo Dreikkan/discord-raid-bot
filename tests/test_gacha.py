@@ -21,6 +21,7 @@ from raidbot.gacha import (
     roll_gacha,
 )
 from raidbot.gacha_panel import (
+    GachaInventoryView,
     GachaPanelView,
     GachaResultView,
     build_gacha_result_embed,
@@ -729,6 +730,35 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             embed = response.edit_message.await_args.kwargs["embed"]
             self.assertIn("Начислено", embed.description)
             self.assertIn("500", embed.description)
+
+
+class GachaCloseTests(unittest.IsolatedAsyncioTestCase):
+    async def test_result_and_inventory_close_use_interaction_token(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            core = next(
+                item
+                for item in store.settings_for(1)["gacha_items"]
+                if item["id"] == "core-of-harmony"
+            )
+            result_view = GachaResultView(
+                bot, 1, 10, [RollResult(core)]
+            )
+            inventory_view = GachaInventoryView(bot, 1, 10)
+
+            for view in (result_view, inventory_view):
+                response = SimpleNamespace(
+                    is_done=lambda: False,
+                    defer=AsyncMock(),
+                )
+                interaction = SimpleNamespace(
+                    response=response,
+                    delete_original_response=AsyncMock(),
+                )
+                await view._close(interaction)
+                response.defer.assert_awaited_once()
+                interaction.delete_original_response.assert_awaited_once()
 
 
 class FakeAttachment:

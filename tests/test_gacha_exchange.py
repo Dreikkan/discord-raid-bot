@@ -137,6 +137,25 @@ class GachaExchangeViewTests(unittest.IsolatedAsyncioTestCase):
             embed = response.edit_message.await_args.kwargs["embed"]
             self.assertIn("Обменяно", embed.description)
 
+    async def test_close_button_deletes_original_response(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "store.json")
+            bot = FakeBot(store)
+            view = GachaExchangeView(bot, 1, 10)
+            response = SimpleNamespace(
+                is_done=lambda: False,
+                defer=AsyncMock(),
+            )
+            interaction = SimpleNamespace(
+                response=response,
+                delete_original_response=AsyncMock(),
+            )
+
+            await view._close(interaction)
+
+            response.defer.assert_awaited_once()
+            interaction.delete_original_response.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
