@@ -33,6 +33,7 @@ def _configure_logging() -> None:
 class RaidBot(commands.Bot):
     def __init__(self, data_path: str | Path) -> None:
         intents = discord.Intents.default()
+        intents.members = True
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -137,7 +138,14 @@ def main() -> None:
     if not data_path.is_absolute():
         data_path = PROJECT_ROOT / data_path
     bot = RaidBot(data_path)
-    bot.run(token, log_handler=None)
+    try:
+        bot.run(token, log_handler=None)
+    except discord.PrivilegedIntentsRequired as exc:
+        raise SystemExit(
+            "Включите Server Members Intent: Discord Developer Portal → "
+            "ваше приложение → Bot → Privileged Gateway Intents → "
+            "Server Members Intent. Без него бот не запустится."
+        ) from exc
 
 
 if __name__ == "__main__":

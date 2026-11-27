@@ -249,38 +249,33 @@ class GachaCurrencyView(PanelView):
         back.callback = self._back  # type: ignore[method-assign]
         self.add_item(back)
 
-    def all_recipient_ids(self) -> list[int]:
-        ids: set[int] = set()
+    async def fetch_all_recipient_ids(self) -> list[int]:
         guild = self.bot.get_guild(self.guild_id)
-        if guild is not None:
-            for member in guild.members:
+        if guild is None:
+            raise RuntimeError("Сервер не найден.")
+        ids: set[int] = set()
+        try:
+            async for member in guild.fetch_members(limit=None):
                 if not member.bot:
                     ids.add(int(member.id))
-            if guild.me is not None:
-                ids.discard(int(guild.me.id))
+        except (discord.ClientException, discord.HTTPException) as exc:
+            raise RuntimeError(
+                "Не удалось получить полный список участников. "
+                "Проверьте, что включён Server Members Intent."
+            ) from exc
+        if guild.me is not None:
+            ids.discard(int(guild.me.id))
         bot_user = getattr(self.bot, "user", None)
         if bot_user is not None:
             ids.discard(int(bot_user.id))
-
-        for raw_user_id in self.bot.store.gacha_profile_ids(self.guild_id):
-            try:
-                user_id = int(raw_user_id)
-            except (TypeError, ValueError):
-                continue
-            member = guild.get_member(user_id) if guild is not None else None
-            if member is not None and member.bot:
-                continue
-            ids.add(user_id)
         return sorted(ids)
 
     def build_embed(self) -> discord.Embed:
-        recipients = len(self.all_recipient_ids())
         description = (
             "Выберите пользователя, чтобы начислить ему "
             f"{CURRENCY_EMOJI} **{CURRENCY_NAME}**.\n\n"
-            "**«Выдать всем»** начисляет всем участникам, которых бот "
-            "знает, и всем, у кого уже есть профиль гачи.\n\n"
-            f"Получателей для «Выдать всем»: **{recipients}**.\n"
+            "**«Выдать всем»** получает полный список участников "
+            "сервера и начисляет каждому.\n\n"
             f"Максимум за одну операцию: **{MAX_GACHA_CURRENCY_AWARD:,}**."
         )
         if self.notice:
@@ -361,9 +356,7 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
         self.all_members = all_members
         self.parent_view = parent
         if all_members:
-            placeholder = (
-                f"Получателей: {len(parent.all_recipient_ids())}"
-            )
+            placeholder = "Полный список участников"
         else:
             placeholder = f"Для {target_name}"
         self.amount_input = discord.ui.TextInput(
@@ -392,13 +385,41 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
             return
 
         if self.all_members:
-            user_ids = self.parent_view.all_recipient_ids()
+            await interaction.response.defer(
+                ephemeral=True, thinking=True
+            )
+            try:
+                user_ids = (
+                    await self.parent_view.fetch_all_recipient_ids()
+                )
+            except RuntimeError as exc:
+                await interaction.followup.send(
+                    f"❌ {exc}", ephemeral=True
+                )
+                try:
+                    await interaction.delete_original_response()
+                except (
+                    discord.NotFound,
+                    discord.Forbidden,
+                    discord.HTTPException,
+                ):
+                    pass
+                return
             if not user_ids:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Не найдено участников для начисления.",
                     ephemeral=True,
                 )
+                try:
+                    await interaction.delete_original_response()
+                except (
+                    discord.NotFound,
+                    discord.Forbidden,
+                    discord.HTTPException,
+                ):
+                    pass
                 return
+
             updated = self.bot.store.add_currency_to_users(
                 self.guild_id, user_ids, amount
             )
@@ -409,16 +430,25 @@ class GachaCurrencyAmountModal(discord.ui.Modal):
                 amount,
                 updated,
             )
-            new_view = GachaCurrencyView(
-                self.bot,
-                self.guild_id,
-                notice=(
-                    f"✅ Начислено **{amount:,}** {CURRENCY_EMOJI} "
-                    f"{CURRENCY_NAME} **{updated}** участникам.\n"
+            embed = discord.Embed(
+                title="✅ Начислено всем",
+                description=(
+                    f"Полный список участников получен.\n\n"
+                    f"**{updated}** участникам начислено по "
+                    f"**{amount:,}** {CURRENCY_EMOJI} {CURRENCY_NAME}.\n"
                     f"Всего начислено: **{total:,}**."
                 ).replace(",", " "),
+                color=discord.Color.green(),
             )
-            await self.parent_view.show_view(interaction, new_view)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            try:
+                await interaction.delete_original_response()
+            except (
+                discord.NotFound,
+                discord.Forbidden,
+                discord.HTTPException,
+            ):
+                pass
             return
 
         profile = self.bot.store.add_currency(

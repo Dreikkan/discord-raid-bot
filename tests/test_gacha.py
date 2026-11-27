@@ -737,15 +737,33 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Начислено", embed.description)
             self.assertIn("500", embed.description)
 
-    async def test_award_to_all_known_profiles(self) -> None:
+    async def test_award_to_all_server_members(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             store = Store(Path(temporary) / "store.json")
-            bot = FakeBot(store)
-            for user_id in (10, 11, 12):
-                store.add_currency(1, user_id, 0)
 
+            class FakeMember:
+                def __init__(self, member_id: int, bot: bool = False) -> None:
+                    self.id = member_id
+                    self.bot = bot
+
+            class FakeGuild:
+                me = None
+
+                async def fetch_members(self, limit=None):
+                    for member in (
+                        FakeMember(10),
+                        FakeMember(11),
+                        FakeMember(12),
+                        FakeMember(999, bot=True),
+                    ):
+                        yield member
+
+            class GuildBot(FakeBot):
+                def get_guild(self, guild_id: int):
+                    return FakeGuild()
+
+            bot = GuildBot(store)
             view = GachaCurrencyView(bot, 1)
-            self.assertEqual(view.all_recipient_ids(), [10, 11, 12])
             view.message = SimpleNamespace(id=1)
             modal = GachaCurrencyAmountModal(
                 bot,
@@ -757,13 +775,17 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
             )
             modal.amount_input._value = "250"
             response = SimpleNamespace(
+                defer=AsyncMock(),
                 edit_message=AsyncMock(),
                 send_message=AsyncMock(),
             )
+            followup = SimpleNamespace(send=AsyncMock())
             interaction = SimpleNamespace(
                 message=SimpleNamespace(id=1),
                 user=SimpleNamespace(id=999),
                 response=response,
+                followup=followup,
+                delete_original_response=AsyncMock(),
             )
 
             await modal.on_submit(interaction)
@@ -772,8 +794,10 @@ class GachaCurrencyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     store.profile_for(1, user_id)["balance"], 250
                 )
-            response.edit_message.assert_awaited_once()
-            embed = response.edit_message.await_args.kwargs["embed"]
+            response.defer.assert_awaited_once()
+            followup.send.assert_awaited_once()
+            interaction.delete_original_response.assert_awaited_once()
+            embed = followup.send.await_args.kwargs["embed"]
             self.assertIn("3", embed.description)
             self.assertIn("750", embed.description)
 
