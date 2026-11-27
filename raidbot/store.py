@@ -764,11 +764,13 @@ class Store:
         return due
 
     def specs_for_role(self, guild_id: str | int, role: str) -> list[dict[str, Any]]:
-        return [
-            spec
-            for spec in self.settings_for(guild_id)["specs"]
-            if spec["role"] == role
-        ]
+        specs = self.settings_for(guild_id)["specs"]
+        if role == "dd":
+            # A DD may also use the tank weapon specialization.
+            dd_specs = [spec for spec in specs if spec["role"] == "dd"]
+            tank_specs = [spec for spec in specs if spec["role"] == "tank"]
+            return dd_specs + tank_specs
+        return [spec for spec in specs if spec["role"] == role]
 
     # --------------------------------------------------------------- Raids
 

@@ -97,6 +97,15 @@ class StoreTests(unittest.TestCase):
         reloaded = Store(self.path)
         self.assertEqual(len(reloaded.settings_for(123)["specs"]), 12)
 
+    def test_dd_specializations_include_tank_spec(self) -> None:
+        dd_specs = self.store.specs_for_role(123, "dd")
+        tank_specs = self.store.specs_for_role(123, "tank")
+        dd_ids = {spec["id"] for spec in dd_specs}
+        tank_ids = {spec["id"] for spec in tank_specs}
+        self.assertTrue(tank_ids)
+        self.assertTrue(tank_ids <= dd_ids)
+        self.assertEqual(len(dd_specs), len(dd_ids))
+
     def test_old_saved_limits_are_migrated_to_new_defaults(self) -> None:
         old_data = {
             "version": 1,

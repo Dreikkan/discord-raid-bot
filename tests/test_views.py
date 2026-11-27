@@ -306,6 +306,37 @@ class ViewFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(new_view.specs), 1)
         self.assertEqual(new_view.specs[0]["id"], selected_id)
 
+    async def test_dd_role_offers_tank_specialization(self) -> None:
+        tank_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
+        view = SpecSelectView(self.bot, self.raid["id"], 777, "dd")
+        values = [option.value for option in view.children[0].options]
+        self.assertIn(tank_spec["id"], values)
+
+        interaction = FakeInteraction({"values": [tank_spec["id"]]})
+        await view._on_spec(interaction)
+
+        new_view = interaction.response.edit_message.await_args.kwargs["view"]
+        self.assertIsInstance(new_view, StatusView)
+        self.assertEqual(new_view.role, "dd")
+        self.assertEqual(new_view.specs[0]["id"], tank_spec["id"])
+
+        status_interaction = FakeInteraction()
+        with patch(
+            "raidbot.views.refresh_raid_panel", new=AsyncMock(return_value=True)
+        ):
+            await new_view._set_status(
+                status_interaction, status=STATUS_MAIN
+            )
+
+        saved = self.store.get_raid(self.raid["id"])
+        assert saved is not None
+        registration = saved["registrations"]["777"]
+        self.assertEqual(registration["role"], "dd")
+        self.assertEqual(registration["status"], STATUS_MAIN)
+        self.assertEqual(
+            registration["specializations"][0]["id"], tank_spec["id"]
+        )
+
     async def test_existing_registration_can_be_changed_from_scratch(self) -> None:
         initial_spec = self.store.specs_for_role(self.guild_id, "tank")[0]
         self.store.set_registration(
