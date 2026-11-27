@@ -120,9 +120,9 @@ class RaidCog(commands.Cog):
 
     @app_commands.command(
         name="настройки",
-        description="Открыть настройки рейда и гачи (только администраторы)",
+        description="Открыть настройки рейда и гачи",
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.check(settings_admin_check)
     async def settings(self, interaction: discord.Interaction) -> None:

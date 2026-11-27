@@ -1,11 +1,11 @@
 {
-  "version": 3,
+  "version": 4,
   "items": [
     {
       "id": "core-of-harmony",
       "name": "Ядро гармонии",
       "rarity": "legendary",
-      "weight": 24,
+      "weight": 8,
       "description": "Легендарная награда, в которой пульсирует сама гармония мира. Говорят, ядро выбирает своего владельца само.",
       "image": "core-of-harmony.png",
       "announce": true
@@ -14,7 +14,7 @@
       "id": "general-kinzhalov",
       "name": "Генерал кинжалов",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "general-kinzhalov.png",
       "announce": false
@@ -23,7 +23,7 @@
       "id": "legendarnyy-melodichnyy-kamen",
       "name": "Легендарный мелодичный камень",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "legendarnyy-melodichnyy-kamen.png",
       "announce": false
@@ -32,7 +32,7 @@
       "id": "polunochnyy-gryzun",
       "name": "Полуночный грызун",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "polunochnyy-gryzun.png",
       "announce": false
@@ -41,7 +41,7 @@
       "id": "serebryannye-tsvety",
       "name": "Серебряные цветы",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "serebryannye-tsvety.png",
       "announce": false
@@ -50,7 +50,7 @@
       "id": "sunduk-snaryazheniya",
       "name": "Сундук снаряжения",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "sunduk-snaryazheniya.png",
       "announce": false
@@ -59,7 +59,7 @@
       "id": "terrakotovyy-kaban",
       "name": "Терракотовый кабан",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "terrakotovyy-kaban.png",
       "announce": false
@@ -68,7 +68,7 @@
       "id": "ekho-busina",
       "name": "Эхо бусина",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "ekho-busina.png",
       "announce": false
@@ -77,7 +77,7 @@
       "id": "ekho-nefrit",
       "name": "Эхо нефрит",
       "rarity": "legendary",
-      "weight": 9,
+      "weight": 19,
       "description": "",
       "image": "ekho-nefrit.png",
       "announce": false

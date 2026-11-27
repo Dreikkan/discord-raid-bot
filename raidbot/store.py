@@ -160,7 +160,8 @@ class Store:
         ]
         seen_ids = {item["id"] for item in items}
         seen_names = {item["name"].casefold() for item in items}
-        for item in gacha_item_defaults():
+        defaults = gacha_item_defaults()
+        for item in defaults:
             if item["id"] in seen_ids:
                 continue
             if item["name"].casefold() in seen_names:
@@ -168,6 +169,17 @@ class Store:
             items.append(item)
             seen_ids.add(item["id"])
             seen_names.add(item["name"].casefold())
+
+        # Keep the legendary weights of the shipped pool in sync with the
+        # current drop rates (the core is pinned to a 0.1% base chance).
+        legendary_weights = {
+            item["id"]: item["weight"]
+            for item in defaults
+            if item["rarity"] == "legendary"
+        }
+        for item in items:
+            if item["id"] in legendary_weights:
+                item["weight"] = legendary_weights[item["id"]]
         return items
 
     @staticmethod

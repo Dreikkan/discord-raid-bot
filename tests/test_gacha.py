@@ -63,7 +63,7 @@ class GachaItemTests(unittest.TestCase):
         self.assertTrue(core["announce"])
         self.assertIsNotNone(image_path(core))
 
-    def test_core_base_chance_is_half_a_percent(self) -> None:
+    def test_core_base_chance_is_one_tenth_percent(self) -> None:
         items = gacha_item_defaults()
         legendary = [
             item for item in items if item["rarity"] == "legendary"
@@ -75,7 +75,7 @@ class GachaItemTests(unittest.TestCase):
         item_chance = core["weight"] / sum(
             item["weight"] for item in legendary
         )
-        self.assertAlmostEqual(rarity_chance * item_chance, 0.005, places=6)
+        self.assertAlmostEqual(rarity_chance * item_chance, 0.001, places=6)
 
     def test_rarity_aliases_are_accepted(self) -> None:
         self.assertEqual(parse_rarity("легендарная"), "legendary")
@@ -180,7 +180,13 @@ class GachaStoreTests(unittest.TestCase):
         self.assertIn("custom-item", ids)
         self.assertIn("core-of-harmony", ids)
         self.assertEqual(len(settings["gacha_items"]), 36)
-        self.assertEqual(settings["gacha_pool_version"], 3)
+        self.assertEqual(settings["gacha_pool_version"], 4)
+        core = next(
+            item
+            for item in settings["gacha_items"]
+            if item["id"] == "core-of-harmony"
+        )
+        self.assertEqual(core["weight"], 8)
 
     def test_role_reward_marks_are_idempotent(self) -> None:
         self.store.mark_role_reward(1, 10, "ludik")

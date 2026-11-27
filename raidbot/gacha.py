@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GACHA_ITEMS_PATH = PROJECT_ROOT / "config" / "gacha_items.json"
 GACHA_ASSETS_DIR = PROJECT_ROOT / "assets" / "gacha"
-GACHA_POOL_VERSION = 3
+GACHA_POOL_VERSION = 4
 
 LEGACY_PLACEHOLDER_IDS: frozenset[str] = frozenset(
     {
@@ -106,8 +106,8 @@ RARITY_WEIGHTS: dict[str, int] = {
     "uncommon": 260,
     "rare": 130,
     "epic": 90,
-    # 2% for all legendary items. The core has 24/96 of this bucket,
-    # so its base chance is exactly 0.5%.
+    # 2% for all legendary items. The core has 8/160 of this bucket,
+    # so its base chance is exactly 0.1%.
     "legendary": 20,
 }
 
