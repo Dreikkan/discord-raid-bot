@@ -61,6 +61,8 @@ class GachaExchangeStoreTests(unittest.TestCase):
                 "griby",
                 "bolshoy-kamen-nastroyki",
                 "bolshoy-kamen-nastroyki",
+                "core-of-harmony",
+                "core-of-harmony",
             ]
         )
 
@@ -72,7 +74,20 @@ class GachaExchangeStoreTests(unittest.TestCase):
         self.assertEqual(profile["balance"], 51)
         self.assertEqual(profile["inventory"]["griby"], 1)
         self.assertEqual(profile["inventory"]["bolshoy-kamen-nastroyki"], 1)
+        self.assertEqual(profile["inventory"]["core-of-harmony"], 2)
         self.assertEqual(len(breakdown), 2)
+
+    def test_core_cannot_be_exchanged(self) -> None:
+        self._add_inventory(["core-of-harmony", "core-of-harmony"])
+
+        with self.assertRaises(ValueError):
+            self.store.exchange_gacha_duplicates(
+                1, 10, "core-of-harmony", 1
+            )
+        self.assertEqual(
+            self.store.profile_for(1, 10)["inventory"]["core-of-harmony"],
+            2,
+        )
 
     def test_exchange_deleted_item_is_rejected(self) -> None:
         self._add_inventory(["griby", "griby"])
@@ -91,7 +106,13 @@ class GachaExchangeViewTests(unittest.IsolatedAsyncioTestCase):
                 1,
                 10,
                 cost=0,
-                item_ids=["griby", "griby", "griby"],
+                item_ids=[
+                    "griby",
+                    "griby",
+                    "griby",
+                    "core-of-harmony",
+                    "core-of-harmony",
+                ],
                 pity=0,
                 core_pity=0,
             )
@@ -100,12 +121,15 @@ class GachaExchangeViewTests(unittest.IsolatedAsyncioTestCase):
             embed = view.build_embed()
             self.assertIn("Курс", embed.description)
             self.assertIn("только дубликаты", embed.description)
+            self.assertIn("Ядро гармонии", embed.description)
             select = next(
                 item
                 for item in view.children
                 if hasattr(item, "options")
             )
-            self.assertEqual(select.options[0].value, "griby")
+            self.assertEqual(
+                [option.value for option in select.options], ["griby"]
+            )
 
             view.message = SimpleNamespace(id=1)
             modal = GachaExchangeAmountModal(

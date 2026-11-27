@@ -22,6 +22,7 @@ from .constants import (
     STATUS_MAIN,
 )
 from .gacha import (
+    CORE_ITEM_ID,
     GACHA_POOL_VERSION,
     GachaError,
     LEGACY_PLACEHOLDER_IDS,
@@ -509,6 +510,10 @@ class Store:
         item = self.find_gacha_item(guild_id, item_id)
         if item is None:
             raise ValueError("Предмет не найден в пуле гачи.")
+        if str(item.get("id")) == CORE_ITEM_ID:
+            raise ValueError(
+                "«Ядро гармонии» нельзя обменять — оно только копится."
+            )
         value = int(GACHA_EXCHANGE_VALUES.get(str(item.get("rarity")), 0))
         if value <= 0:
             raise ValueError("Для этого предмета обмен недоступен.")
@@ -554,6 +559,8 @@ class Store:
                 continue
             item = items_by_id.get(item_id)
             if item is None:
+                continue
+            if str(item.get("id")) == CORE_ITEM_ID:
                 continue
             value = int(
                 GACHA_EXCHANGE_VALUES.get(str(item.get("rarity")), 0)

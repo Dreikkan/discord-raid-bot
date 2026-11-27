@@ -11,6 +11,7 @@ from .constants import (
     GACHA_EXCHANGE_VALUES,
 )
 from .gacha import (
+    CORE_ITEM_ID,
     RARITY_EMOJIS,
     RARITY_LABELS,
     RARITY_ORDER,
@@ -43,7 +44,7 @@ def _duplicate_entries(
     entries: list[tuple[dict[str, Any], int, int]] = []
     for item_id, raw_count in profile.get("inventory", {}).items():
         count = max(0, int(raw_count))
-        if count <= 1:
+        if count <= 1 or str(item_id) == CORE_ITEM_ID:
             continue
         item = items_by_id.get(str(item_id))
         if item is None:
@@ -164,6 +165,7 @@ class GachaExchangeView(discord.ui.View):
         description = (
             "Можно обменять **только дубликаты**. Одна копия каждого "
             "предмета всегда остаётся в коллекции.\n\n"
+            "**«Ядро гармонии» не участвует в обмене — оно только копится.**\n\n"
             "**Курс за одну копию:**\n"
             + "\n".join(rate_lines)
         )
@@ -228,7 +230,11 @@ class GachaExchangeView(discord.ui.View):
         )
         if not breakdown:
             await self.show(
-                interaction, notice="ℹ️ Дубликатов для обмена нет."
+                interaction,
+                notice=(
+                    "ℹ️ Дубликатов, доступных для обмена, нет. "
+                    "«Ядро гармонии» не участвует."
+                ),
             )
             return
         quantity = sum(int(entry["quantity"]) for entry in breakdown)
@@ -401,8 +407,8 @@ async def send_exchange_view(
     view = GachaExchangeView(bot, guild_id, user_id)
     if not view.entries:
         await interaction.response.send_message(
-            "♻️ У вас нет дубликатов для обмена. Одна копия каждого "
-            "предмета остаётся в коллекции.",
+            "♻️ У вас нет дубликатов, доступных для обмена. "
+            "«Ядро гармонии» не участвует в обмене.",
             ephemeral=True,
         )
         return

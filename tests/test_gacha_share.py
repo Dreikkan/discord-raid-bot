@@ -43,6 +43,8 @@ class GachaShareTests(unittest.IsolatedAsyncioTestCase):
                 embed.fields[1].value,
                 "<@10>",
             )
+            self.assertEqual(embed.fields[2].name, "Количество")
+            self.assertEqual(embed.fields[2].value, "2 шт.")
             self.assertEqual(embed.image.url, "attachment://griby.png")
             self.assertIn("Сервер", embed.footer.text)
 

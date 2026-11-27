@@ -778,8 +778,8 @@ def build_shared_item_embed(
         inline=True,
     )
     embed.add_field(
-        name="В коллекции",
-        value=f"×{count}",
+        name="Количество",
+        value=f"{count} шт.",
         inline=True,
     )
     image_url, _ = image_reference(item)
