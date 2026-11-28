@@ -486,7 +486,7 @@ class WelcomeSettingsView(PanelView):
             f">>> {message}",
             "",
             "Подстановки: `{user}` — упоминание, `{username}` — имя, "
-            "`{server}` — название сервера, `{count}` — номер участника.",
+            "`{server}` — название сервера.",
         ]
         if not channel_id:
             lines.extend(
@@ -713,7 +713,7 @@ class WelcomeTextModal(discord.ui.Modal):
             style=discord.TextStyle.paragraph,
             default=str(welcome["message"]),
             placeholder=(
-                "Подстановки: {user}, {username}, {server}, {count}"
+                "Подстановки: {user}, {username}, {server}"
             ),
             max_length=MAX_WELCOME_MESSAGE_LENGTH,
             required=True,

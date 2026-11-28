@@ -14,6 +14,10 @@ WELCOME_COLOR = 0x8B5CF6
 DEFAULT_WELCOME_TITLE = "👋 Добро пожаловать!"
 DEFAULT_WELCOME_MESSAGE = (
     "Привет, {user}! Рады видеть тебя на **{server}**.\n"
+    "Желаем отличного времени и удачных рейдов!"
+)
+_OLD_DEFAULT_WELCOME_MESSAGE = (
+    "Привет, {user}! Рады видеть тебя на **{server}**.\n"
     "Ты — **{count}**-й участник. Желаем отличного времени и удачных рейдов!"
 )
 MAX_WELCOME_TITLE_LENGTH = 200
@@ -42,7 +46,10 @@ def normalize_welcome(raw: Any) -> dict[str, Any]:
 
     message = raw.get("message")
     if isinstance(message, str) and message.strip():
-        welcome["message"] = message.strip()[:MAX_WELCOME_MESSAGE_LENGTH]
+        cleaned_message = message.strip()
+        if cleaned_message == _OLD_DEFAULT_WELCOME_MESSAGE:
+            cleaned_message = DEFAULT_WELCOME_MESSAGE
+        welcome["message"] = cleaned_message[:MAX_WELCOME_MESSAGE_LENGTH]
 
     channel_id = raw.get("channel_id")
     if channel_id is not None:
@@ -77,7 +84,7 @@ def render_welcome_text(
     member_id: int,
     username: str,
     guild_name: str,
-    member_count: int,
+    member_count: int = 0,
 ) -> str:
     values = {
         "user": f"<@{member_id}>",
@@ -105,14 +112,13 @@ def build_welcome_embed(
         or getattr(member, "name", None)
         or "друг"
     )
-    count = member_count_for_guild(guild)
 
     description = render_welcome_text(
         config["message"],
         member_id=member_id,
         username=display_name,
         guild_name=guild_name,
-        member_count=count,
+        member_count=member_count_for_guild(guild),
     )
 
     embed = discord.Embed(
@@ -132,15 +138,6 @@ def build_welcome_embed(
     avatar_url = getattr(avatar, "url", None)
     if avatar_url:
         embed.set_thumbnail(url=avatar_url)
-
-    embed.add_field(name="👥 Участников", value=f"**{count}**", inline=True)
-    joined_at = getattr(member, "joined_at", None)
-    if joined_at is not None:
-        embed.add_field(
-            name="📅 Вступление",
-            value=f"<t:{int(joined_at.timestamp())}:D>",
-            inline=True,
-        )
 
     footer_text = f"{guild_name} · Новый участник"
     if icon_url:

@@ -43,19 +43,37 @@ class WelcomeEmbedTests(unittest.TestCase):
         self.assertEqual(sanitized["title"], "Заголовок")
         self.assertEqual(sanitized["message"], "Текст")
 
+    def test_old_default_message_is_migrated_without_member_count(self) -> None:
+        old_default = (
+            "Привет, {user}! Рады видеть тебя на **{server}**.\n"
+            "Ты — **{count}**-й участник. "
+            "Желаем отличного времени и удачных рейдов!"
+        )
+        welcome = normalize_welcome({"message": old_default})
+        self.assertEqual(welcome["message"], DEFAULT_WELCOME_MESSAGE)
+        self.assertNotIn("{count}", welcome["message"])
+
     def test_placeholders_are_rendered_and_markdown_is_escaped(self) -> None:
         text = render_welcome_text(
-            "{user} · {username} · {server} · {count}",
+            "{user} · {username} · {server}",
             member_id=42,
             username="Новый_игрок",
             guild_name="Мой*сервер",
-            member_count=7,
         )
         self.assertEqual(
-            text, "<@42> · Новый\\_игрок · Мой\\*сервер · 7"
+            text, "<@42> · Новый\\_игрок · Мой\\*сервер"
         )
 
-    def test_embed_uses_avatar_banner_and_member_count(self) -> None:
+        count_text = render_welcome_text(
+            "{count}",
+            member_id=42,
+            username="Игрок",
+            guild_name="Сервер",
+            member_count=7,
+        )
+        self.assertEqual(count_text, "7")
+
+    def test_embed_uses_avatar_and_guild_branding(self) -> None:
         guild = SimpleNamespace(
             name="Рейдовый сервер",
             member_count=128,
@@ -71,14 +89,14 @@ class WelcomeEmbedTests(unittest.TestCase):
         )
         welcome = {
             "title": "Добро пожаловать!",
-            "message": "Привет, {user}! Ты {count}-й на {server}.",
+            "message": "Привет, {user}! Ты на {server}.",
         }
 
         embed = build_welcome_embed(guild, member, welcome)
 
         self.assertEqual(embed.title, "Добро пожаловать!")
         self.assertIn("<@42>", embed.description or "")
-        self.assertIn("128", embed.description or "")
+        self.assertIn("Рейдовый сервер", embed.description or "")
         self.assertEqual(embed.author.name, "Рейдовый сервер")
         self.assertEqual(
             embed.author.icon_url, "https://cdn.example/icon.png"
@@ -86,9 +104,7 @@ class WelcomeEmbedTests(unittest.TestCase):
         self.assertEqual(
             embed.thumbnail.url, "https://cdn.example/avatar.png"
         )
-        fields = {field.name: field.value for field in embed.fields}
-        self.assertEqual(fields["👥 Участников"], "**128**")
-        self.assertIn("📅 Вступление", fields)
+        self.assertEqual(embed.fields, [])
         self.assertEqual(
             embed.footer.text, "Рейдовый сервер · Новый участник"
         )
