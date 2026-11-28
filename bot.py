@@ -13,6 +13,7 @@ from raidbot.commands import RaidCog
 from raidbot.reminders import ActivityCheckinView, ReminderService
 from raidbot.store import Store
 from raidbot.views import RaidPanelView
+from raidbot.welcome import send_welcome
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -119,6 +120,15 @@ class RaidBot(commands.Bot):
         if self.user:
             log.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
         log.info("Серверов: %s", len(self.guilds))
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        try:
+            await send_welcome(self.store, member)
+        except Exception:
+            log.exception(
+                "Не удалось отправить приветствие участнику %s",
+                getattr(member, "id", "?"),
+            )
 
     async def close(self) -> None:
         await self.reminders.stop()

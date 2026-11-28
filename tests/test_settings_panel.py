@@ -15,6 +15,8 @@ from raidbot.settings_panel import (
     AddActivityModal,
     GeneralSettingsModal,
     SettingsView,
+    WelcomeSettingsView,
+    WelcomeTextModal,
 )
 from raidbot.store import Store
 
@@ -60,6 +62,9 @@ class SettingsPanelTests(unittest.TestCase):
         self.assertIn("ДД: 7", fields["Рейд"])
         self.assertIn("Europe/Moscow", fields["Рейд"])
 
+        self.assertIn("Приветствие новых участников", fields)
+        self.assertIn("не настроено", fields["Приветствие новых участников"])
+
         self.assertIn("Вечеринка", fields)
         self.assertIn("Ежедневно, 21:00–21:30", fields["Вечеринка"])
         self.assertIn("<#10>", fields["Вечеринка"])
@@ -73,6 +78,7 @@ class SettingsPanelTests(unittest.TestCase):
         self.assertEqual(len(select.options), len(self.settings["activities"]))
         labels = [item.label for item in view.children if hasattr(item, "label")]
         self.assertIn("Настройки рейда", labels)
+        self.assertIn("Приветствие", labels)
         self.assertIn("Добавить активность", labels)
 
     def test_activity_detail_and_pickers(self) -> None:
@@ -91,6 +97,26 @@ class SettingsPanelTests(unittest.TestCase):
         self.assertIn("Канал", channel_view.build_embed().title)
         role_view = ActivityRoleView(self.bot, 1, activity["id"])
         self.assertIn("Роль", role_view.build_embed().title)
+
+    def test_welcome_settings_view_and_text_modal(self) -> None:
+        view = WelcomeSettingsView(self.bot, 1)
+        labels = [item.label for item in view.children if hasattr(item, "label")]
+        self.assertEqual(
+            labels,
+            ["Включить", "Канал", "Текст", "Предпросмотр", "Назад"],
+        )
+        embed = view.build_embed()
+        self.assertIn("Приветствие", embed.title)
+        self.assertIn("Не настроено", embed.description)
+        self.assertIn("{user}", embed.description)
+
+        modal = WelcomeTextModal(self.bot, 1, view)
+        self.assertEqual(
+            [item.label for item in modal.children],
+            ["Заголовок", "Сообщение"],
+        )
+        self.assertTrue(modal.title_input.default)
+        self.assertTrue(modal.message_input.default)
 
     def test_modals_are_created_with_current_values(self) -> None:
         panel = SettingsView(self.bot, 1)
@@ -146,6 +172,59 @@ class SettingsPanelInteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settings["limits"], {"tank": 2, "heal": 4, "dd": 9})
         self.assertEqual(settings["timezone"], "UTC+05:00")
         response.edit_message.assert_awaited_once()
+
+    async def test_welcome_text_modal_saves_values(self) -> None:
+        parent = WelcomeSettingsView(self.bot, 1)
+        parent.message = SimpleNamespace(id=1)
+        modal = WelcomeTextModal(self.bot, 1, parent)
+        modal.title_input._value = "Новое приветствие"
+        modal.message_input._value = "Привет, {user}!"
+
+        response = SimpleNamespace(
+            edit_message=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        interaction = SimpleNamespace(
+            message=SimpleNamespace(id=1),
+            response=response,
+        )
+
+        await modal.on_submit(interaction)
+
+        welcome = self.store.settings_for(1)["welcome"]
+        self.assertEqual(welcome["title"], "Новое приветствие")
+        self.assertEqual(welcome["message"], "Привет, {user}!")
+        response.edit_message.assert_awaited_once()
+
+    async def test_welcome_preview_is_ephemeral(self) -> None:
+        view = WelcomeSettingsView(self.bot, 1)
+        view.message = SimpleNamespace(id=1)
+        guild = SimpleNamespace(
+            name="Сервер", member_count=10, icon=None
+        )
+        member = SimpleNamespace(
+            id=5,
+            display_name="Админ",
+            display_avatar=None,
+            joined_at=None,
+        )
+        response = SimpleNamespace(
+            send_message=AsyncMock(),
+            edit_message=AsyncMock(),
+        )
+        interaction = SimpleNamespace(
+            guild=guild,
+            user=member,
+            response=response,
+        )
+
+        await view._preview(interaction)
+
+        response.send_message.assert_awaited_once()
+        kwargs = response.send_message.await_args.kwargs
+        self.assertTrue(kwargs["ephemeral"])
+        self.assertIn("Предпросмотр", kwargs["content"])
+        self.assertIn("<@5>", kwargs["embed"].description or "")
 
 
 if __name__ == "__main__":

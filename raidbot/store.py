@@ -31,6 +31,7 @@ from .gacha import (
     normalize_items,
 )
 from .registration import rebalance_waiting_tank
+from .welcome import default_welcome, normalize_welcome
 
 _STORE_VERSION = 2
 _SETTINGS_VERSION = 4
@@ -45,6 +46,7 @@ def default_settings() -> dict[str, Any]:
         "timezone": DEFAULT_TIMEZONE,
         "specs": bundled_catalog(),
         "activities": activity_defaults(),
+        "welcome": default_welcome(),
         "gacha_items": gacha_item_defaults(),
         "gacha_pool_version": GACHA_POOL_VERSION,
     }
@@ -229,6 +231,7 @@ class Store:
         settings["activities"] = Store._normalize_activities(
             raw.get("activities")
         )
+        settings["welcome"] = normalize_welcome(raw.get("welcome"))
 
         try:
             pool_version = int(raw.get("gacha_pool_version", 1))
@@ -270,6 +273,15 @@ class Store:
         settings = self.settings_for(guild_id)
         settings["timezone"] = timezone
         self._save()
+
+    def save_welcome(
+        self, guild_id: str | int, welcome: dict[str, Any]
+    ) -> dict[str, Any]:
+        settings = self.settings_for(guild_id)
+        normalized = normalize_welcome(welcome)
+        settings["welcome"] = normalized
+        self._save()
+        return normalized
 
     def find_activity(
         self, guild_id: str | int, name: str

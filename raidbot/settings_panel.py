@@ -21,6 +21,13 @@ from .constants import (
     ROLE_ORDER,
 )
 from .time_utils import TimeInputError, parse_timezone
+from .welcome import (
+    MAX_WELCOME_MESSAGE_LENGTH,
+    MAX_WELCOME_TITLE_LENGTH,
+    WELCOME_COLOR,
+    build_welcome_embed,
+    normalize_welcome,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +109,25 @@ def build_settings_embed(settings: dict[str, Any]) -> discord.Embed:
             f"**Название:** {settings.get('title') or '—'}\n"
             f"**Лимиты:** {' · '.join(limit_parts)}\n"
             f"**Часовой пояс:** {settings.get('timezone') or '—'}"
+        ),
+        inline=False,
+    )
+
+    welcome = normalize_welcome(settings.get("welcome"))
+    welcome_channel = welcome["channel_id"]
+    if welcome["enabled"] and welcome_channel is not None:
+        welcome_status = "✅ включено"
+    elif welcome_channel is not None:
+        welcome_status = "⏸ выключено"
+    else:
+        welcome_status = "⚙️ не настроено"
+    embed.add_field(
+        name="Приветствие новых участников",
+        value=(
+            f"**Канал:** "
+            f"{f'<#{welcome_channel}>' if welcome_channel else 'не задан'}\n"
+            f"**Статус:** {welcome_status}\n"
+            "Текст, канал и предпросмотр — кнопкой ниже."
         ),
         inline=False,
     )
@@ -302,6 +328,15 @@ class SettingsView(PanelView):
         raid_button.callback = self._open_raid  # type: ignore[method-assign]
         self.add_item(raid_button)
 
+        welcome_button = discord.ui.Button(
+            label="Приветствие",
+            emoji="👋",
+            style=discord.ButtonStyle.secondary,
+            row=button_row,
+        )
+        welcome_button.callback = self._open_welcome  # type: ignore[method-assign]
+        self.add_item(welcome_button)
+
         add_button = discord.ui.Button(
             label="Добавить активность",
             emoji="➕",
@@ -347,6 +382,11 @@ class SettingsView(PanelView):
             GeneralSettingsModal(self.bot, self.guild_id, self)
         )
 
+    async def _open_welcome(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, WelcomeSettingsView(self.bot, self.guild_id)
+        )
+
     async def _open_add_activity(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(
             AddActivityModal(self.bot, self.guild_id, self)
@@ -357,6 +397,358 @@ class SettingsView(PanelView):
 
         await self.show_view(
             interaction, GachaPoolView(self.bot, self.guild_id)
+        )
+
+
+class WelcomeSettingsView(PanelView):
+    def __init__(
+        self,
+        bot: Any,
+        guild_id: int,
+        *,
+        notice: str | None = None,
+    ) -> None:
+        super().__init__(bot, guild_id)
+        self.notice = notice
+        welcome = self.welcome()
+
+        toggle = discord.ui.Button(
+            label="Выключить" if welcome["enabled"] else "Включить",
+            emoji="⏸️" if welcome["enabled"] else "▶️",
+            style=(
+                discord.ButtonStyle.danger
+                if welcome["enabled"]
+                else discord.ButtonStyle.success
+            ),
+            row=0,
+        )
+        toggle.callback = self._toggle  # type: ignore[method-assign]
+        self.add_item(toggle)
+
+        channel = discord.ui.Button(
+            label="Канал",
+            emoji="📢",
+            style=discord.ButtonStyle.secondary,
+            row=0,
+        )
+        channel.callback = self._open_channel  # type: ignore[method-assign]
+        self.add_item(channel)
+
+        text = discord.ui.Button(
+            label="Текст",
+            emoji="✏️",
+            style=discord.ButtonStyle.secondary,
+            row=0,
+        )
+        text.callback = self._open_text  # type: ignore[method-assign]
+        self.add_item(text)
+
+        preview = discord.ui.Button(
+            label="Предпросмотр",
+            emoji="👁️",
+            style=discord.ButtonStyle.primary,
+            row=0,
+        )
+        preview.callback = self._preview  # type: ignore[method-assign]
+        self.add_item(preview)
+
+        back = discord.ui.Button(
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        back.callback = self._back  # type: ignore[method-assign]
+        self.add_item(back)
+
+    def welcome(self) -> dict[str, Any]:
+        return normalize_welcome(self.settings().get("welcome"))
+
+    def build_embed(self) -> discord.Embed:
+        welcome = self.welcome()
+        channel_id = welcome["channel_id"]
+        channel = f"<#{channel_id}>" if channel_id else "не задан"
+        if welcome["enabled"] and channel_id:
+            status = "✅ Включено"
+        elif channel_id:
+            status = "⏸️ Выключено"
+        else:
+            status = "⚙️ Не настроено"
+
+        message = str(welcome["message"]).strip()
+        if len(message) > 1000:
+            message = f"{message[:999].rstrip()}…"
+
+        lines = [
+            f"**Статус:** {status}",
+            f"**Канал:** {channel}",
+            "",
+            "**Текст приветствия:**",
+            f">>> {message}",
+            "",
+            "Подстановки: `{user}` — упоминание, `{username}` — имя, "
+            "`{server}` — название сервера, `{count}` — номер участника.",
+        ]
+        if not channel_id:
+            lines.extend(
+                (
+                    "",
+                    "Сначала выберите канал, затем включите приветствие.",
+                )
+            )
+        lines.extend(
+            (
+                "",
+                "Нажмите **«Предпросмотр»**, чтобы увидеть точный вид "
+                "до включения.",
+            )
+        )
+        description = "\n".join(lines)
+        if self.notice:
+            description = f"{self.notice}\n\n{description}"
+
+        return discord.Embed(
+            title="👋 Приветствие новых участников",
+            description=description[:4096],
+            color=WELCOME_COLOR if welcome["enabled"] else PANEL_COLOR,
+        )
+
+    async def _toggle(self, interaction: discord.Interaction) -> None:
+        welcome = self.welcome()
+        if welcome["enabled"]:
+            welcome["enabled"] = False
+            self.bot.store.save_welcome(self.guild_id, welcome)
+            await self.show_view(
+                interaction,
+                WelcomeSettingsView(
+                    self.bot,
+                    self.guild_id,
+                    notice="⏸️ Приветствие выключено.",
+                ),
+            )
+            return
+
+        if welcome["channel_id"] is None:
+            await interaction.response.send_message(
+                "❌ Сначала выберите канал для приветствия.",
+                ephemeral=True,
+            )
+            return
+
+        guild = self.bot.get_guild(self.guild_id)
+        channel = (
+            guild.get_channel(welcome["channel_id"]) if guild else None
+        )
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "❌ Канал приветствия не найден. Выберите его заново.",
+                ephemeral=True,
+            )
+            return
+        if guild.me is not None:
+            permissions = channel.permissions_for(guild.me)
+            if not permissions.send_messages or not permissions.embed_links:
+                await interaction.response.send_message(
+                    "❌ Боту нужны права на отправку сообщений и встраивание "
+                    "ссылок в выбранном канале.",
+                    ephemeral=True,
+                )
+                return
+
+        welcome["enabled"] = True
+        self.bot.store.save_welcome(self.guild_id, welcome)
+        await self.show_view(
+            interaction,
+            WelcomeSettingsView(
+                self.bot,
+                self.guild_id,
+                notice=(
+                    "✅ Приветствие включено. Новые участники увидят его "
+                    "в выбранном канале."
+                ),
+            ),
+        )
+
+    async def _open_channel(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, WelcomeChannelView(self.bot, self.guild_id)
+        )
+
+    async def _open_text(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(
+            WelcomeTextModal(self.bot, self.guild_id, self)
+        )
+
+    async def _preview(self, interaction: discord.Interaction) -> None:
+        guild = getattr(interaction, "guild", None)
+        if guild is None:
+            guild = self.bot.get_guild(self.guild_id)
+        member = getattr(interaction, "user", None)
+        if guild is None or member is None:
+            await interaction.response.send_message(
+                "❌ Не удалось построить предпросмотр.", ephemeral=True
+            )
+            return
+
+        embed = build_welcome_embed(guild, member, self.welcome())
+        await interaction.response.send_message(
+            content=(
+                "👁️ **Предпросмотр приветствия.** "
+                "В канал ничего не отправлено."
+            ),
+            embed=embed,
+            ephemeral=True,
+        )
+
+    async def _back(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, SettingsView(self.bot, self.guild_id)
+        )
+
+
+class WelcomeChannelView(PanelView):
+    def __init__(self, bot: Any, guild_id: int) -> None:
+        super().__init__(bot, guild_id)
+
+        select = discord.ui.ChannelSelect(
+            placeholder="Выберите канал для приветствия",
+            channel_types=[discord.ChannelType.text],
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+        select.callback = self._on_channel  # type: ignore[method-assign]
+        self.add_item(select)
+
+        back = discord.ui.Button(
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        back.callback = self._back  # type: ignore[method-assign]
+        self.add_item(back)
+
+    def build_embed(self) -> discord.Embed:
+        welcome = normalize_welcome(self.settings().get("welcome"))
+        channel = (
+            f"<#{welcome['channel_id']}>"
+            if welcome["channel_id"]
+            else "не задан"
+        )
+        return discord.Embed(
+            title="📢 Канал приветствия",
+            description=(
+                f"**Текущий канал:** {channel}\n\n"
+                "Выберите текстовый канал, в который бот будет отправлять "
+                "приветствие новым участникам."
+            ),
+            color=PANEL_COLOR,
+        )
+
+    async def _on_channel(self, interaction: discord.Interaction) -> None:
+        assert isinstance(interaction.data, dict)
+        values = interaction.data.get("values") or []
+        if not values:
+            return
+
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            await interaction.response.send_message(
+                "Сервер не найден.", ephemeral=True
+            )
+            return
+        channel = guild.get_channel(int(values[0]))
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "Выберите текстовый канал.", ephemeral=True
+            )
+            return
+        if guild.me is not None:
+            permissions = channel.permissions_for(guild.me)
+            if not permissions.send_messages or not permissions.embed_links:
+                await interaction.response.send_message(
+                    "Боту нужны права на отправку сообщений и встраивание "
+                    "ссылок в выбранном канале.",
+                    ephemeral=True,
+                )
+                return
+
+        welcome = normalize_welcome(self.settings().get("welcome"))
+        welcome["channel_id"] = channel.id
+        self.bot.store.save_welcome(self.guild_id, welcome)
+        await self.show_view(
+            interaction,
+            WelcomeSettingsView(
+                self.bot,
+                self.guild_id,
+                notice=f"✅ Канал приветствия изменён на <#{channel.id}>.",
+            ),
+        )
+
+    async def _back(self, interaction: discord.Interaction) -> None:
+        await self.show_view(
+            interaction, WelcomeSettingsView(self.bot, self.guild_id)
+        )
+
+
+class WelcomeTextModal(discord.ui.Modal):
+    def __init__(
+        self, bot: Any, guild_id: int, parent: WelcomeSettingsView
+    ) -> None:
+        super().__init__(title="Текст приветствия")
+        self.bot = bot
+        self.guild_id = int(guild_id)
+        self.parent_view = parent
+        welcome = normalize_welcome(
+            bot.store.settings_for(guild_id).get("welcome")
+        )
+
+        self.title_input = discord.ui.TextInput(
+            label="Заголовок",
+            default=str(welcome["title"]),
+            max_length=MAX_WELCOME_TITLE_LENGTH,
+            required=True,
+        )
+        self.message_input = discord.ui.TextInput(
+            label="Сообщение",
+            style=discord.TextStyle.paragraph,
+            default=str(welcome["message"]),
+            placeholder=(
+                "Подстановки: {user}, {username}, {server}, {count}"
+            ),
+            max_length=MAX_WELCOME_MESSAGE_LENGTH,
+            required=True,
+        )
+        self.add_item(self.title_input)
+        self.add_item(self.message_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        title = self.title_input.value.strip()
+        message = self.message_input.value.strip()
+        if not title or "\n" in title or "\r" in title:
+            await interaction.response.send_message(
+                "❌ Заголовок должен быть непустой одной строкой.",
+                ephemeral=True,
+            )
+            return
+        if not message:
+            await interaction.response.send_message(
+                "❌ Сообщение не должно быть пустым.", ephemeral=True
+            )
+            return
+
+        welcome = normalize_welcome(
+            self.bot.store.settings_for(self.guild_id).get("welcome")
+        )
+        welcome["title"] = title
+        welcome["message"] = message
+        self.bot.store.save_welcome(self.guild_id, welcome)
+        await self.parent_view.show_view(
+            interaction,
+            WelcomeSettingsView(
+                self.bot,
+                self.guild_id,
+                notice="✅ Текст приветствия сохранён.",
+            ),
         )
 
 

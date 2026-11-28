@@ -47,6 +47,34 @@ class StoreTests(unittest.TestCase):
         )
         self.assertEqual(reloaded.settings_for(123)["timezone"], "UTC+03:00")
 
+    def test_welcome_settings_defaults_and_persistence(self) -> None:
+        settings = self.store.settings_for(123)
+        self.assertFalse(settings["welcome"]["enabled"])
+        self.assertIsNone(settings["welcome"]["channel_id"])
+
+        saved = self.store.save_welcome(
+            123,
+            {
+                "enabled": True,
+                "channel_id": 55,
+                "title": "Привет!",
+                "message": "Добро пожаловать, {user}!",
+            },
+        )
+        self.assertTrue(saved["enabled"])
+        self.assertEqual(saved["channel_id"], 55)
+
+        reloaded = Store(self.path)
+        restored = reloaded.settings_for(123)["welcome"]
+        self.assertTrue(restored["enabled"])
+        self.assertEqual(restored["channel_id"], 55)
+        self.assertEqual(restored["title"], "Привет!")
+        self.assertEqual(restored["message"], "Добро пожаловать, {user}!")
+
+    def test_welcome_is_disabled_without_channel(self) -> None:
+        saved = self.store.save_welcome(123, {"enabled": True})
+        self.assertFalse(saved["enabled"])
+
     def test_activity_config_persists_and_can_be_marked_sent(self) -> None:
         settings = self.store.settings_for(123)
         party = next(
